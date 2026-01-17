@@ -44,6 +44,28 @@ readonly SCRIPT_VERSION="5.0.0-Pro"
 readonly BUILD_DATE="2026-01-17"
 readonly SCRIPT_NAME="Z-Panel Pro 内存优化"
 
+# 文件锁配置
+readonly LOCK_FILE="/tmp/z-panel.lock"
+readonly LOCK_FD=200
+
+# 界面配置
+declare -g USE_NERD_FONT=false
+declare -g ICON_SUCCESS=""
+declare -g ICON_ERROR=""
+declare -g ICON_WARNING=""
+declare -g ICON_INFO=""
+declare -g ICON_CPU=""
+declare -g ICON_RAM=""
+declare -g ICON_DISK=""
+declare -g ICON_SWAP=""
+declare -g ICON_ZRAM=""
+declare -g ICON_GEAR=""
+declare -g ICON_SHIELD=""
+declare -g ICON_CHART=""
+declare -g ICON_TRASH=""
+declare -g ICON_ROCKET=""
+declare -g ICON_TOOLS=""
+
 # 目录配置
 readonly INSTALL_DIR="/opt/z-panel"
 readonly CONF_DIR="$INSTALL_DIR/conf"
@@ -102,6 +124,232 @@ declare -g CACHE_SWAP_TOTAL=0
 declare -g CACHE_SWAP_USED=0
 declare -g CACHE_LAST_UPDATE=0
 declare -g CACHE_TTL=3  # 缓存有效期（秒）
+
+# ============================================================================
+# 文件锁功能
+# ============================================================================
+
+# 获取文件锁
+# @return 0 表示成功获取锁，1 表示失败
+acquire_lock() {
+    # 尝试打开锁文件
+    if ! eval "exec $LOCK_FD>\"$LOCK_FILE\""; then
+        log error "无法创建锁文件: $LOCK_FILE"
+        return 1
+    fi
+
+    # 尝试获取排他锁（非阻塞模式）
+    if ! flock -n $LOCK_FD; then
+        local pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "unknown")
+        log error "脚本已在运行中 (PID: $pid)"
+        log error "如需重新启动，请先运行: rm -f $LOCK_FILE"
+        return 1
+    fi
+
+    # 将当前 PID 写入锁文件
+    echo $$ > "$LOCK_FILE"
+
+    log info "已获取文件锁 (PID: $$)"
+    return 0
+}
+
+# 释放文件锁
+release_lock() {
+    if flock -u $LOCK_FD 2>/dev/null; then
+        log info "已释放文件锁"
+        rm -f "$LOCK_FILE" 2>/dev/null
+    fi
+}
+
+# ============================================================================
+# Nerd Font 检测和图标系统
+# ============================================================================
+
+# 检测系统是否支持 Nerd Font
+# 检查多个来源以确定 Nerd Font 是否可用
+# @return 0 表示支持 Nerd Font，1 表示不支持
+detect_nerd_font() {
+    local has_nerd_font=false
+
+    # 方法 1: 检查字体配置文件
+    if [[ -f ~/.config/fontconfig/fonts.conf ]] || [[ -f ~/.fonts.conf ]]; then
+        local font_file="${HOME}/.config/fontconfig/fonts.conf"
+        [[ -f "$font_file" ]] || font_file="${HOME}/.fonts.conf"
+        if grep -qi "nerd\|hack\|fira\|jetbrains" "$font_file" 2>/dev/null; then
+            has_nerd_font=true
+        fi
+    fi
+
+    # 方法 2: 检查常见 Nerd Font 安装路径
+    local font_dirs=(
+        "/usr/share/fonts"
+        "/usr/local/share/fonts"
+        "${HOME}/.local/share/fonts"
+        "${HOME}/.fonts"
+    )
+
+    for dir in "${font_dirs[@]}"; do
+        if [[ -d "$dir" ]]; then
+            if find "$dir" -iname "*nerd*" -o -iname "*hack*nerd*" -o -iname "*fira*nerd*" 2>/dev/null | grep -q .; then
+                has_nerd_font=true
+                break
+            fi
+        fi
+    done
+
+    # 方法 3: 检查环境变量
+    if [[ -n "$TERM_PROGRAM" ]] && [[ "$TERM_PROGRAM" == "iTerm.app" ]]; then
+        # iTerm2 通常支持 Nerd Font
+        has_nerd_font=true
+    fi
+
+    if [[ -n "$TERMINAL_EMULATOR" ]]; then
+        if echo "$TERMINAL_EMULATOR" | grep -qi "kitty\|alacritty\|wezterm"; then
+            has_nerd_font=true
+        fi
+    fi
+
+    # 方法 4: 检查终端能力（尝试打印 Nerd Font 图标）
+    if command -v tput &> /dev/null; then
+        local cols=$(tput cols 2>/dev/null || echo 80)
+        if [[ $cols -gt 80 ]]; then
+            # 宽终端更可能支持 Nerd Font
+            has_nerd_font=true
+        fi
+    fi
+
+    # 方法 5: 检查 LC_CTYPE 是否支持 UTF-8
+    if [[ "${LC_ALL:-${LC_CTYPE:-}}" =~ UTF-8 ]]; then
+        has_nerd_font=true
+    fi
+
+    $has_nerd_font && return 0 || return 1
+}
+
+# 初始化图标系统
+# 根据检测到的环境设置合适的图标
+init_icons() {
+    if detect_nerd_font; then
+        USE_NERD_FONT=true
+        # Nerd Font 图标
+        ICON_SUCCESS="✓"
+        ICON_ERROR="✗"
+        ICON_WARNING="⚠"
+        ICON_INFO="ℹ"
+        ICON_CPU="🔲"
+        ICON_RAM="🔳"
+        ICON_DISK="💾"
+        ICON_SWAP="🔄"
+        ICON_ZRAM="📦"
+        ICON_GEAR="⚙️"
+        ICON_SHIELD="🛡️"
+        ICON_CHART="📊"
+        ICON_TRASH="🗑️"
+        ICON_ROCKET="🚀"
+        ICON_TOOLS="🛠️"
+    else
+        USE_NERD_FONT=false
+        # ASCII 图标（默认）
+        ICON_SUCCESS="[OK]"
+        ICON_ERROR="[!!]"
+        ICON_WARNING="[!]"
+        ICON_INFO="[i]"
+        ICON_CPU="[CPU]"
+        ICON_RAM="[RAM]"
+        ICON_DISK="[DISK]"
+        ICON_SWAP="[SWAP]"
+        ICON_ZRAM="[ZRAM]"
+        ICON_GEAR="[GEAR]"
+        ICON_SHIELD="[SHIELD]"
+        ICON_CHART="[CHART]"
+        ICON_TRASH="[TRASH]"
+        ICON_ROCKET="[ROCKET]"
+        ICON_TOOLS="[TOOLS]"
+    fi
+}
+
+# ============================================================================
+# 输出格式化工具（支持中文字符宽度）
+# ============================================================================
+
+# 计算字符串的显示宽度（中文字符按2个宽度计算）
+# @param str 输入字符串
+# @return 显示宽度
+string_display_width() {
+    local str="$1"
+    local width=0
+    local i=0
+    local len=${#str}
+
+    while [[ $i -lt $len ]]; do
+        local char="${str:$i:1}"
+        # 检查是否为多字节字符（中文字符等）
+        if [[ $(printf '%s' "$char" | wc -m) -gt 1 ]] || [[ $(printf '%s' "$char" | wc -c) -gt 1 ]]; then
+            # 多字节字符通常占用2个显示宽度
+            ((width += 2))
+        else
+            # 单字节字符占用1个显示宽度
+            ((width += 1))
+        fi
+        ((i++))
+    done
+
+    echo $width
+}
+
+# 左对齐字符串到指定宽度（考虑中文字符宽度）
+# @param str 输入字符串
+# @param width 目标宽度
+# @return 填充后的字符串
+pad_left() {
+    local str="$1"
+    local width=$2
+    local current_width=$(string_display_width "$str")
+    local padding=$((width - current_width))
+
+    if [[ $padding -gt 0 ]]; then
+        printf '%s%*s' "$str" $padding ''
+    else
+        printf '%s' "$str"
+    fi
+}
+
+# 右对齐字符串到指定宽度（考虑中文字符宽度）
+# @param str 输入字符串
+# @param width 目标宽度
+# @return 填充后的字符串
+pad_right() {
+    local str="$1"
+    local width=$2
+    local current_width=$(string_display_width "$str")
+    local padding=$((width - current_width))
+
+    if [[ $padding -gt 0 ]]; then
+        printf '%*s%s' $padding '' "$str"
+    else
+        printf '%s' "$str"
+    fi
+}
+
+# 居中对齐字符串到指定宽度（考虑中文字符宽度）
+# @param str 输入字符串
+# @param width 目标宽度
+# @return 填充后的字符串
+pad_center() {
+    local str="$1"
+    local width=$2
+    local current_width=$(string_display_width "$str")
+    local padding=$((width - current_width))
+
+    if [[ $padding -gt 0 ]]; then
+        local left_pad=$((padding / 2))
+        local right_pad=$((padding - left_pad))
+        printf '%*s%s%*s' $left_pad '' "$str" $right_pad ''
+    else
+        printf '%s' "$str"
+    fi
+}
+
 
 # ============================================================================
 # 工具函数
@@ -577,26 +825,26 @@ log_config_menu() {
     while true; do
         clear
 
-        echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-        echo -e "${CYAN}│${WHITE}              日志管理${CYAN}                                 │${NC}"
-        echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}│${WHITE}  当前配置:${CYAN}                                               ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  最大日志大小: ${GREEN}${LOG_MAX_SIZE_MB}MB${NC}                                   ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  日志保留天数: ${GREEN}${LOG_RETENTION_DAYS}天${NC}                                    ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}│${WHITE}  操作选项:${CYAN}                                               ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}1.${NC} 设置最大日志大小                                          ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}2.${NC} 设置日志保留天数                                          ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}3.${NC} 查看日志文件列表                                          ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}4.${NC} 查看运行日志（分页）                                      ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}5.${NC} 查看动态调整日志（分页）                                  ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}6.${NC} 清理过期日志                                              ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}0.${NC} 返回                                                    ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
-        echo ""
-        echo -ne "${WHITE}请选择 [0-6]: ${NC}"
+        printf "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}\n"
+        printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_center "日志管理" 57)"
+        printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "  当前配置:" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  最大日志大小: ${GREEN}${LOG_MAX_SIZE_MB}MB${NC}" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  日志保留天数: ${GREEN}${LOG_RETENTION_DAYS}天${NC}" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "  操作选项:" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}1.${NC} 设置最大日志大小" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}2.${NC} 设置日志保留天数" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}3.${NC} 查看日志文件列表" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}4.${NC} 查看运行日志（分页）" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}5.${NC} 查看动态调整日志（分页）" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}6.${NC} 清理过期日志" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}0.${NC} 返回" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}└─────────────────────────────────────────────────────────┘${NC}\n"
+        printf "\n"
+        printf "${WHITE}请选择 [0-6]: ${NC}"
         read -r choice
 
         case $choice in
@@ -1900,25 +2148,25 @@ show_monitor() {
 show_status() {
     clear
 
-    echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}│${WHITE}         Z-Panel Pro 系统状态 v${SCRIPT_VERSION}${CYAN}                   │${NC}"
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+    printf "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}\n"
+    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_center "Z-Panel Pro 系统状态 v${SCRIPT_VERSION}" 57)"
+    printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
 
     # 系统信息
-    echo -e "${CYAN}│${WHITE}  📋 系统信息${CYAN}                                               │${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  发行版: ${GREEN}${CURRENT_DISTRO} ${CURRENT_VERSION}${NC}                            ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  内存: ${GREEN}${TOTAL_MEMORY_MB}MB${NC}  CPU: ${GREEN}${CPU_CORES}核心${NC}  策略: ${YELLOW}${STRATEGY_MODE}${NC}              ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "  📋 系统信息" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  发行版: ${GREEN}${CURRENT_DISTRO} ${CURRENT_VERSION}${NC}" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  内存: ${GREEN}${TOTAL_MEMORY_MB}MB${NC}  CPU: ${GREEN}${CPU_CORES}核心${NC}  策略: ${YELLOW}${STRATEGY_MODE}${NC}" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
 
     # ZRAM 状态
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${WHITE}  💾 ZRAM 状态${CYAN}                                               │${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+    printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
+    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "  💾 ZRAM 状态" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
 
     if swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
-        echo -e "${CYAN}│${NC}  状态: ${GREEN}运行中${NC}                                              ${CYAN}│${NC}"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  状态: ${GREEN}运行中${NC}" 57)"
 
         local zram_status=$(get_zram_status)
         local disk_size=$(echo "$zram_status" | grep -o '"disk_size":"[^"]*"' | cut -d'"' -f4)
@@ -1927,65 +2175,65 @@ show_status() {
         local algo=$(echo "$zram_status" | grep -o '"algorithm":"[^"]*"' | cut -d'"' -f4)
         local ratio=$(echo "$zram_status" | grep -o '"compression_ratio":"[^"]*"' | cut -d'"' -f4)
 
-        echo -e "${CYAN}│${NC}  算法: ${CYAN}${algo}${NC}  大小: ${CYAN}${disk_size}${NC}                              ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  数据: ${CYAN}${data_size}${NC}  压缩: ${CYAN}${comp_size}${NC}                                 ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  压缩比:                                                  ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  "
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  算法: ${CYAN}${algo}${NC}  大小: ${CYAN}${disk_size}${NC}" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  数据: ${CYAN}${data_size}${NC}  压缩: ${CYAN}${comp_size}${NC}" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  压缩比:" 57)"
+        printf "${CYAN}│${NC}  "
         show_compression_chart "$ratio" 46
-        echo -e "${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+        printf "${CYAN}│${NC}\n"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
     else
-        echo -e "${CYAN}│${NC}  状态: ${RED}未启用${NC}                                              ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  状态: ${RED}未启用${NC}" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
     fi
 
     # Swap 状态
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${WHITE}  🔄 Swap 状态${CYAN}                                               │${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+    printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
+    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "  🔄 Swap 状态" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
 
     read -r swap_total swap_used <<< "$(get_swap_info false)"
 
     if [[ $swap_total -eq 0 ]]; then
-        echo -e "${CYAN}│${NC}  状态: ${RED}未启用${NC}                                              ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  状态: ${RED}未启用${NC}" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
     else
-        echo -e "${CYAN}│${NC}  总量: ${CYAN}${swap_total}MB${NC}  已用: ${CYAN}${swap_used}MB${NC}                                  ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  Swap 负载:                                               ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  "
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  总量: ${CYAN}${swap_total}MB${NC}  已用: ${CYAN}${swap_used}MB${NC}" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  Swap 负载:" 57)"
+        printf "${CYAN}│${NC}  "
         show_progress_bar "$swap_used" "$swap_total" 46 ""
-        echo -e "${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+        printf "${CYAN}│${NC}\n"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
     fi
 
     # 内核参数
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${WHITE}  ⚙️  内核参数${CYAN}                                               │${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+    printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
+    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "  ⚙️  内核参数" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
 
     local swappiness=$(sysctl -n vm.swappiness 2>/dev/null || echo "60")
     local vfs_cache=$(sysctl -n vm.vfs_cache_pressure 2>/dev/null || echo "100")
     local dirty_ratio=$(sysctl -n vm.dirty_ratio 2>/dev/null || echo "20")
 
-    echo -e "${CYAN}│${NC}  vm.swappiness:                                            ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  "
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  vm.swappiness:" 57)"
+    printf "${CYAN}│${NC}  "
     show_progress_bar "$swappiness" 100 46 ""
-    echo -e "${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+    printf "${CYAN}│${NC}\n"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
 
     # 保护机制
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${WHITE}  🛡️  保护机制${CYAN}                                               │${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} I/O 熔断: ${GREEN}已启用${NC}                                        ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} OOM 保护: ${GREEN}已启用${NC}                                          ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} 物理内存熔断: ${GREEN}已启用${NC}                                    ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+    printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
+    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "  🛡️  保护机制" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}•${NC} I/O 熔断: ${GREEN}已启用${NC}" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}•${NC} OOM 保护: ${GREEN}已启用${NC}" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}•${NC} 物理内存熔断: ${GREEN}已启用${NC}" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
 
-    echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
-    echo ""
+    printf "${CYAN}└─────────────────────────────────────────────────────────┘${NC}\n"
+    printf "\n"
 }
 
 # ============================================================================
@@ -1996,74 +2244,75 @@ show_main_menu() {
     clear
 
     # 顶部标题栏
-    echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}│${WHITE}         Z-Panel Pro v${SCRIPT_VERSION} 主控菜单${CYAN}                    │${NC}"
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${WHITE}  系统: ${GREEN}RAM:${TOTAL_MEMORY_MB}MB${NC} ${WHITE}CPU:${CPU_CORES}Cores${NC} ${WHITE}${CURRENT_DISTRO} ${CURRENT_VERSION}${CYAN}      │${NC}"
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+    printf "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}\n"
+    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_center "Z-Panel Pro v${SCRIPT_VERSION} 主控菜单" 57)"
+    printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
+    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "系统: RAM:${TOTAL_MEMORY_MB}MB CPU:${CPU_CORES}Cores ${CURRENT_DISTRO} ${CURRENT_VERSION}" 57)"
+    printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
 
     # 主要功能
-    echo -e "${CYAN}│${WHITE}  🚀 主要功能${CYAN}                                            │${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}1.${NC} 一键优化${CYAN}[${YELLOW}当前: ${STRATEGY_MODE}${CYAN}]${NC}                              ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}2.${NC} 状态监控                                              ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}3.${NC} 日志管理                                              ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "🚀 主要功能" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}1.${NC} 一键优化[${YELLOW}当前: ${STRATEGY_MODE}${NC}]" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}2.${NC} 状态监控" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}3.${NC} 日志管理" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
 
     # 高级功能
-    echo -e "${CYAN}│${WHITE}  ⚙️  高级功能${CYAN}                                            │${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}4.${NC} 切换优化模式${CYAN}[${YELLOW}保守/平衡/激进${CYAN}]${NC}                         ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}5.${NC} 配置 ZRAM                                              ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}6.${NC} 配置虚拟内存                                            ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}7.${NC} 动态调整模式                                            ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "⚙️  高级功能" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}4.${NC} 切换优化模式[${YELLOW}保守/平衡/激进${NC}]" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}5.${NC} 配置 ZRAM" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}6.${NC} 配置虚拟内存" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}7.${NC} 动态调整模式" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
 
     # 系统管理
-    echo -e "${CYAN}│${WHITE}  🛠️  系统管理${CYAN}                                            │${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}8.${NC} 查看系统状态                                            ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}9.${NC} 停用 ZRAM                                              ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}10.${NC} 还原备份                                                ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}0.${NC} 退出程序                                                ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "🛠️  系统管理" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}8.${NC} 查看系统状态" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}9.${NC} 停用 ZRAM" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}10.${NC} 还原备份" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}0.${NC} 退出程序" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
 
     # 状态栏
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
+    printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
     local zram_status=$([[ $ZRAM_ENABLED == true ]] && echo -e "${GREEN}●${NC} 已启用" || echo -e "${RED}○${NC} 未启用")
     local dynamic_status=$([[ $DYNAMIC_MODE == true ]] && echo -e "${GREEN}●${NC} 已启用" || echo -e "${RED}○${NC} 未启用")
-    echo -e "${CYAN}│${NC}  ZRAM: ${zram_status}${CYAN}  │${NC}  动态: ${dynamic_status}${CYAN}              ${CYAN}│${NC}"
-    echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
-    echo ""
-    echo -ne "${WHITE}请选择 [0-10]: ${NC}"
+    local status_text="  ZRAM: ${zram_status}  │  动态: ${dynamic_status}"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "$status_text" 57)"
+    printf "${CYAN}└─────────────────────────────────────────────────────────┘${NC}\n"
+    printf "\n"
+    printf "${WHITE}请选择 [0-10]: ${NC}"
 }
 
 strategy_menu() {
     while true; do
         clear
 
-        echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-        echo -e "${CYAN}│${WHITE}              选择优化模式${CYAN}                              │${NC}"
-        echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}1.${NC} Conservative (保守)                                      ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}     • 最稳定，适合路由器/NAS                              ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}     • ZRAM: 80% | Swap: 100% | Swappiness: 60              ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}2.${NC} Balance (平衡)  ${CYAN}[${YELLOW}推荐${CYAN}]${NC}                                 ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}     • 性能与稳定兼顾，日常使用                              ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}     • ZRAM: 120% | Swap: 150% | Swappiness: 85             ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}3.${NC} Aggressive (激进)                                      ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}     • 极限榨干内存，适合极度缺内存                          ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}     • ZRAM: 180% | Swap: 200% | Swappiness: 100            ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}0.${NC} 返回                                                    ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
-        echo ""
-        echo -ne "${WHITE}请选择 [0-3]: ${NC}"
+        printf "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}\n"
+        printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_center "选择优化模式" 57)"
+        printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}1.${NC} Conservative (保守)" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "     • 最稳定，适合路由器/NAS" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "     • ZRAM: 80% | Swap: 100% | Swappiness: 60" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}2.${NC} Balance (平衡)  ${YELLOW}[推荐]${NC}" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "     • 性能与稳定兼顾，日常使用" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "     • ZRAM: 120% | Swap: 150% | Swappiness: 85" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}3.${NC} Aggressive (激进)" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "     • 极限榨干内存，适合极度缺内存" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "     • ZRAM: 180% | Swap: 200% | Swappiness: 100" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}0.${NC} 返回" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}└─────────────────────────────────────────────────────────┘${NC}\n"
+        printf "\n"
+        printf "${WHITE}请选择 [0-3]: ${NC}"
         read -r choice
 
         case $choice in
@@ -2109,18 +2358,18 @@ zram_menu() {
     while true; do
         clear
 
-        echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-        echo -e "${CYAN}│${WHITE}              ZRAM 配置${CYAN}                                │${NC}"
-        echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}1.${NC} 启用 ZRAM (自动检测算法)                                  ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}2.${NC} 自定义配置                                              ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}3.${NC} 查看 ZRAM 状态                                          ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}0.${NC} 返回                                                    ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
-        echo ""
-        echo -ne "${WHITE}请选择 [0-3]: ${NC}"
+        printf "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}\n"
+        printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_center "ZRAM 配置" 57)"
+        printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}1.${NC} 启用 ZRAM (自动检测算法)" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}2.${NC} 自定义配置" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}3.${NC} 查看 ZRAM 状态" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}0.${NC} 返回" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}└─────────────────────────────────────────────────────────┘${NC}\n"
+        printf "\n"
+        printf "${WHITE}请选择 [0-3]: ${NC}"
         read -r choice
 
         case $choice in
@@ -2171,18 +2420,18 @@ dynamic_menu() {
     while true; do
         clear
 
-        echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-        echo -e "${CYAN}│${WHITE}              动态调整模式${CYAN}                              │${NC}"
-        echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}1.${NC} 启用动态调整                                              ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}2.${NC} 停用动态调整                                              ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}3.${NC} 查看调整日志                                              ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}0.${NC} 返回                                                    ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
-        echo ""
-        echo -ne "${WHITE}请选择 [0-3]: ${NC}"
+        printf "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}\n"
+        printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_center "动态调整模式" 57)"
+        printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}1.${NC} 启用动态调整" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}2.${NC} 停用动态调整" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}3.${NC} 查看调整日志" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}0.${NC} 返回" 57)"
+        printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+        printf "${CYAN}└─────────────────────────────────────────────────────────┘${NC}\n"
+        printf "\n"
+        printf "${WHITE}请选择 [0-3]: ${NC}"
         read -r choice
 
         case $choice in
@@ -2228,20 +2477,20 @@ dynamic_menu() {
 quick_optimize() {
     clear
 
-    echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}│${WHITE}              一键优化${CYAN}                                  │${NC}"
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-    echo -e "${CYAN}│${WHITE}  将执行以下操作:${CYAN}                                          ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} 创建系统备份                                             ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} 配置 ZRAM (策略: ${YELLOW}${STRATEGY_MODE}${CYAN})${NC}                           ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} 配置虚拟内存策略 (含 I/O 熔断/OOM 保护)                   ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} 启用动态调整模式                                         ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} 配置开机自启动                                           ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-    echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
-    echo ""
+    printf "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}\n"
+    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_center "一键优化" 57)"
+    printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "  将执行以下操作:" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}•${NC} 创建系统备份" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}•${NC} 配置 ZRAM (策略: ${YELLOW}${STRATEGY_MODE}${NC})" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}•${NC} 配置虚拟内存策略 (含 I/O 熔断/OOM 保护)" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}•${NC} 启用动态调整模式" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}•${NC} 配置开机自启动" 57)"
+    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+    printf "${CYAN}└─────────────────────────────────────────────────────────┘${NC}\n"
+    printf "\n"
     if ! confirm "确认执行？"; then
         return
     fi
@@ -2332,6 +2581,7 @@ EOF
 cleanup_on_exit() {
     log info "执行清理操作..."
     clear_zram_cache
+    release_lock
     log info "清理完成"
 }
 
@@ -2350,7 +2600,16 @@ main() {
         exit 1
     fi
 
-    # 检查依赖
+    # 获取文件锁，防止重复启动
+    if ! acquire_lock; then
+        echo -e "${RED}无法获取文件锁，脚本可能已在运行${NC}"
+        exit 1
+    fi
+
+    # 初始化图标系统（检测 Nerd Font 环境）
+    init_icons
+
+    # 检查依赖（使用增强的 command -v 检测）
     check_dependencies || exit 1
 
     detect_system
