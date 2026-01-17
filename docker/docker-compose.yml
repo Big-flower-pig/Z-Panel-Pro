@@ -1,0 +1,229 @@
+# ==============================================================================
+# Z-Panel Pro V8.0 - Docker Compose配置
+# ==============================================================================
+# @description    企业级Docker Compose部署配置
+# @version       8.0.0-Enterprise
+# ==============================================================================
+
+version: "3.8"
+
+services:
+  # Z-Panel Pro主服务
+  zpanel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: zpanel-pro:8.0.0
+    container_name: zpanel-pro
+    restart: unless-stopped
+    privileged: true
+    pid: "host"
+    network_mode: host
+
+    volumes:
+      # 数据持久化
+      - zpanel_data:/var/lib/zpanel
+      - zpanel_config:/etc/zpanel
+      - zpanel_logs:/var/log/zpanel
+      # 主机访问（用于系统优化）
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+
+    environment:
+      - ZPANEL_ENV=production
+      - ZPANEL_LOG_LEVEL=info
+      - ZPANEL_METRICS_ENABLED=true
+      - ZPANEL_API_ENABLED=true
+      - ZPANEL_WEB_UI_ENABLED=true
+
+    ports:
+      - "8080:8080" # Web UI
+      - "9090:9090" # Prometheus metrics
+      - "8443:8443" # HTTPS Web UI
+
+    healthcheck:
+      test: ["CMD", "/opt/Z-Panel-Pro/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+    depends_on:
+      - redis
+      - postgres
+      - prometheus
+      - grafana
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Redis缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: zpanel-redis
+    restart: unless-stopped
+
+    volumes:
+      - redis_data:/data
+
+    ports:
+      - "6379:6379"
+
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # PostgreSQL数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: zpanel-postgres
+    restart: unless-stopped
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+
+    environment:
+      - POSTGRES_DB=zpanel
+      - POSTGRES_USER=zpanel
+      - POSTGRES_PASSWORD=${ZPANEL_DB_PASSWORD:-zpanel_password}
+
+    ports:
+      - "5432:5432"
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zpanel"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Prometheus监控
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: zpanel-prometheus
+    restart: unless-stopped
+
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+
+    ports:
+      - "9091:9090"
+
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--storage.tsdb.retention.time=15d"
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Grafana可视化
+  grafana:
+    image: grafana/grafana:latest
+    container_name: zpanel-grafana
+    restart: unless-stopped
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources
+
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+
+    ports:
+      - "3000:3000"
+
+    depends_on:
+      - prometheus
+
+    healthcheck:
+      test:
+        ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx反向代理
+  nginx:
+    image: nginx:alpine
+    container_name: zpanel-nginx
+    restart: unless-stopped
+
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    depends_on:
+      - zpanel
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# 数据卷定义
+volumes:
+  zpanel_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/zpanel
+
+  zpanel_config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /etc/zpanel
+
+  zpanel_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/log/zpanel
+
+  redis_data:
+    driver: local
+
+  postgres_data:
+    driver: local
+
+  prometheus_data:
+    driver: local
+
+  grafana_data:
+    driver: local
+
+  nginx_logs:
+    driver: local
+
+# 网络定义
+networks:
+  default:
+    name: zpanel-network
+    driver: bridge

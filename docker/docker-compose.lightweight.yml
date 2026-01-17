@@ -1,0 +1,46 @@
+version: "3.8"
+
+services:
+  zpanel-lightweight:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.lightweight
+    container_name: zpanel-lightweight
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    volumes:
+      - /dev:/dev
+      - /sys:/sys
+      - /proc:/proc
+      - /tmp/zpanel-data:/opt/Z-Panel-Pro/data
+      - /tmp/zpanel-cache:/opt/Z-Panel-Pro/cache
+    environment:
+      - ZPANEL_MODE=lightweight
+      - ZPANEL_LOG_LEVEL=error
+      - ZPANEL_TUI_ENABLED=true
+      - ZPANEL_DECISION_ENGINE_ENABLED=true
+      - ZPANEL_DB_TYPE=memory
+      - ZPANEL_MAX_MEMORY=80M
+      - ZPANEL_ZRAM_ENABLED=true
+      - ZPANEL_ZRAM_SIZE=128M
+    command: ["tui"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 128M
+        reservations:
+          cpus: "0.5"
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  zpanel-data:
+    driver: local
+  zpanel-cache:
+    driver: local

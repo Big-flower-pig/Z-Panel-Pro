@@ -1,0 +1,491 @@
+# ==============================================================================
+# Z-Panel Pro V8.0 - CI/CD工作流
+# ==============================================================================
+# @description    企业级CI/CD配置
+# @version       8.0.0-Enterprise
+# ==============================================================================
+
+name: Z-Panel Pro CI/CD
+
+on:
+  push:
+    branches: [main, develop, release/*]
+  pull_request:
+    branches: [main, develop]
+  release:
+    types: [published]
+
+env:
+  DOCKER_REGISTRY: ghcr.io
+  DOCKER_IMAGE: ghcr.io/${{ github.repository }}/zpanel-pro
+  KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+
+jobs:
+  # 代码质量检查
+  code-quality:
+    name: 代码质量检查
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 安装ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: 运行ShellCheck
+        run: |
+          find . -name "*.sh" -type f -exec shellcheck {} +
+
+      - name: 安装shfmt
+        run: |
+          go install mvdan.cc/sh/v3/cmd/shfmt@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: 格式检查
+        run: |
+          shfmt -d .
+
+      - name: 安全扫描
+        run: |
+          if command -v bandit &> /dev/null; then
+            bandit -r .
+          fi
+
+  # 单元测试
+  unit-tests:
+    name: 单元测试
+    runs-on: ubuntu-latest
+    needs: code-quality
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc curl jq
+
+      - name: 运行单元测试
+        run: |
+          chmod +x tests/test_runner.sh
+          ./tests/test_runner.sh --unit
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: tests/reports/
+
+  # 集成测试
+  integration-tests:
+    name: 集成测试
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc curl jq docker-compose
+
+      - name: 启动测试环境
+        run: |
+          docker-compose -f docker/docker-compose.yml up -d
+
+      - name: 运行集成测试
+        run: |
+          chmod +x tests/test_runner.sh
+          ./tests/test_runner.sh --integration
+
+      - name: 收集日志
+        if: always()
+        run: |
+          docker-compose logs > logs.txt
+
+      - name: 上传日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs
+          path: logs.txt
+
+      - name: 清理测试环境
+        if: always()
+        run: |
+          docker-compose -f docker/docker-compose.yml down
+
+  # 构建标准Docker镜像
+  build-docker:
+    name: 构建标准Docker镜像
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录到容器注册表
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 提取元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+
+      - name: 构建并推送标准镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 镜像安全扫描
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          format: "sarif"
+          output: "trivy-results.sarif"
+
+      - name: 上传扫描结果
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: "trivy-results.sarif"
+
+  # 构建轻量级Docker镜像
+  build-docker-lightweight:
+    name: 构建轻量级Docker镜像
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录到容器注册表
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 提取元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=ref,event=branch,suffix=-lightweight
+            type=ref,event=pr,suffix=-lightweight
+            type=semver,pattern={{version}},suffix=-lightweight
+            type=semver,pattern={{major}}.{{minor}},suffix=-lightweight
+            type=sha,prefix={{branch}}-lightweight-
+
+      - name: 构建并推送轻量级镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.lightweight
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: 镜像安全扫描
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.DOCKER_IMAGE }}:${{ github.sha }}-lightweight
+          format: "sarif"
+          output: "trivy-lightweight-results.sarif"
+
+      - name: 上传扫描结果
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: "trivy-lightweight-results.sarif"
+
+  # 部署轻量级到测试环境
+  deploy-staging-lightweight:
+    name: 部署轻量级到测试环境
+    runs-on: ubuntu-latest
+    needs: build-docker-lightweight
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: staging-lightweight
+      url: https://staging-lightweight.zpanel.local
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置Kubernetes
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.STAGING_KUBE_CONFIG }}
+
+      - name: 部署到Kubernetes
+        uses: azure/k8s-deploy@v4
+        with:
+          manifests: |
+            kubernetes/lightweight-deployment.yaml
+          images: |
+            ${{ env.DOCKER_IMAGE }}:develop-lightweight
+          kubectl-version: "latest"
+
+      - name: 健康检查
+        run: |
+          kubectl rollout status deployment/zpanel-lightweight -n zpanel --timeout=5m
+
+  # 部署到测试环境
+  deploy-staging:
+    name: 部署到测试环境
+    runs-on: ubuntu-latest
+    needs: build-docker
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: https://staging.zpanel.local
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置Kubernetes
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.STAGING_KUBE_CONFIG }}
+
+      - name: 部署到Kubernetes
+        uses: azure/k8s-deploy@v4
+        with:
+          manifests: |
+            kubernetes/deployment.yaml
+          images: |
+            ${{ env.DOCKER_IMAGE }}:develop
+          kubectl-version: "latest"
+
+      - name: 健康检查
+        run: |
+          kubectl rollout status deployment/zpanel-pro -n zpanel --timeout=5m
+
+  # 部署轻量级到生产环境
+  deploy-production-lightweight:
+    name: 部署轻量级到生产环境
+    runs-on: ubuntu-latest
+    needs: build-docker-lightweight
+    if: github.event_name == 'release'
+    environment:
+      name: production-lightweight
+      url: https://lightweight.zpanel.local
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置Kubernetes
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.PRODUCTION_KUBE_CONFIG }}
+
+      - name: 部署到Kubernetes
+        uses: azure/k8s-deploy@v4
+        with:
+          manifests: |
+            kubernetes/lightweight-deployment.yaml
+          images: |
+            ${{ env.DOCKER_IMAGE }}:${{ github.event.release.tag_name }}-lightweight
+          kubectl-version: "latest"
+
+      - name: 健康检查
+        run: |
+          kubectl rollout status deployment/zpanel-lightweight -n zpanel --timeout=10m
+
+  # 部署到生产环境
+  deploy-production:
+    name: 部署到生产环境
+    runs-on: ubuntu-latest
+    needs: build-docker
+    if: github.event_name == 'release'
+    environment:
+      name: production
+      url: https://zpanel.local
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置Kubernetes
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.PRODUCTION_KUBE_CONFIG }}
+
+      - name: 部署到Kubernetes
+        uses: azure/k8s-deploy@v4
+        with:
+          manifests: |
+            kubernetes/deployment.yaml
+          images: |
+            ${{ env.DOCKER_IMAGE }}:${{ github.event.release.tag_name }}
+          kubectl-version: "latest"
+
+      - name: 健康检查
+        run: |
+          kubectl rollout status deployment/zpanel-pro -n zpanel --timeout=10m
+
+      - name: 通知部署成功
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: "Z-Panel Pro ${{ github.event.release.tag_name }} 已成功部署到生产环境"
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        if: always()
+
+  # 性能测试
+  performance-tests:
+    name: 性能测试
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: 运行性能测试
+        run: |
+          k6 run tests/performance/load-test.js
+
+      - name: 上传性能报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-reports
+          path: tests/performance/reports/
+
+  # 生成文档
+  generate-docs:
+    name: 生成文档
+    runs-on: ubuntu-latest
+    needs: build-docker
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 生成API文档
+        run: |
+          # 使用swagger生成API文档
+          if command -v swagger-codegen &> /dev/null; then
+            swagger-codegen generate -i docs/API.md -l html2 -o docs/api-html
+          fi
+
+      - name: 部署文档
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+
+  # 轻量级集成测试
+  integration-tests-lightweight:
+    name: 轻量级集成测试
+    runs-on: ubuntu-latest
+    needs: build-docker-lightweight
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc curl jq docker-compose
+
+      - name: 启动轻量级测试环境
+        run: |
+          docker-compose -f docker/docker-compose.lightweight.yml up -d
+
+      - name: 运行轻量级集成测试
+        run: |
+          chmod +x tests/test_runner.sh
+          ./tests/test_runner.sh --integration --mode=lightweight
+
+      - name: 收集日志
+        if: always()
+        run: |
+          docker-compose -f docker/docker-compose.lightweight.yml logs > logs-lightweight.txt
+
+      - name: 上传日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs-lightweight
+          path: logs-lightweight.txt
+
+      - name: 清理测试环境
+        if: always()
+        run: |
+          docker-compose -f docker/docker-compose.lightweight.yml down
+
+  # 发布
+  release:
+    name: 发布
+    runs-on: ubuntu-latest
+    needs:
+      [
+        unit-tests,
+        integration-tests,
+        performance-tests,
+        integration-tests-lightweight,
+      ]
+    if: github.event_name == 'release'
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 生成变更日志
+        uses: conventionnal-comment-action/publish-release-notes@v0.2.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 创建GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            zpanel-pro-${{ github.event.release.tag_name }}.tar.gz
+            zpanel-pro-${{ github.event.release.tag_name }}.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

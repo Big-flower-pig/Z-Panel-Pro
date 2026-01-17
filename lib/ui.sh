@@ -1,41 +1,44 @@
 #!/bin/bash
 # ==============================================================================
-# Z-Panel Pro - UI引擎模块
+# Z-Panel Pro - UI组件库
 # ==============================================================================
-# @description    统一的UI渲染引擎
+# @description    提供统一的UI绘制函数
 # @version       7.1.0-Enterprise
 # @author        Z-Panel Team
 # ==============================================================================
 
 # ==============================================================================
-# UI基础绘制函数
+# UI边框绘制函数
 # ==============================================================================
 
 # 绘制顶部边框
 ui_draw_top() {
-    printf "${COLOR_CYAN}�?(printf '%.0s─' $(seq 1 ${UI_WIDTH}))�?{COLOR_NC}\n"
+    printf "${COLOR_CYAN}┌$(printf '%.0s─' $(seq 1 ${UI_WIDTH}))┐${COLOR_NC}\n"
 }
 
 # 绘制底部边框
 ui_draw_bottom() {
-    printf "${COLOR_CYAN}�?(printf '%.0s─' $(seq 1 ${UI_WIDTH}))�?{COLOR_NC}\n"
+    printf "${COLOR_CYAN}└$(printf '%.0s─' $(seq 1 ${UI_WIDTH}))┘${COLOR_NC}\n"
 }
 
-# 绘制分隔�?ui_draw_line() {
-    printf "${COLOR_CYAN}�?(printf '%.0s─' $(seq 1 ${UI_WIDTH}))�?{COLOR_NC}\n"
+# 绘制分隔线
+ui_draw_line() {
+    printf "${COLOR_CYAN}├$(printf '%.0s─' $(seq 1 ${UI_WIDTH}))┤${COLOR_NC}\n"
 }
 
-# 绘制单行内容
+# 绘制文本行
 # @param text: 要显示的文本
-# @param color: 颜色（可选，默认为COLOR_NC�?ui_draw_row() {
+# @param color: 可选颜色，默认为COLOR_NC
+ui_draw_row() {
     local text="$1"
     local color="${2:-${COLOR_NC}}"
 
-    # 移除ANSI转义码计算长�?    local plain_text
+    # 移除ANSI转义序列计算宽度
+    local plain_text
     plain_text=$(echo -e "${text}" | sed 's/\x1b\[[0-9;]*m//g')
 
     local pad=$(( UI_WIDTH - ${#plain_text} - 2 ))
-    printf "${COLOR_CYAN}�?{COLOR_NC} ${color}${text}${COLOR_NC}$(printf '%*s' ${pad} '')${COLOR_CYAN}�?{COLOR_NC}\n"
+    printf "${COLOR_CYAN}│${COLOR_NC} ${color}${text}${COLOR_NC}$(printf '%*s' ${pad} '')${COLOR_CYAN}│${COLOR_NC}\n"
 }
 
 # 绘制标题
@@ -44,11 +47,11 @@ ui_draw_header() {
     ui_draw_top
     local title=" $1 "
     local pad=$(( (UI_WIDTH - ${#title}) / 2 ))
-    printf "${COLOR_CYAN}�?{COLOR_NC}$(printf '%*s' ${pad} '')${COLOR_WHITE}${title}${COLOR_NC}$(printf '%*s' $((UI_WIDTH-pad-${#title})) '')${COLOR_CYAN}�?{COLOR_NC}\n"
+    printf "${COLOR_CYAN}│${COLOR_NC}$(printf '%*s' ${pad} '')${COLOR_WHITE}${title}${COLOR_NC}$(printf '%*s' $((UI_WIDTH-pad-${#title})) '')${COLOR_CYAN}│${COLOR_NC}\n"
     ui_draw_line
 }
 
-# 绘制章节
+# 绘制章节标题
 # @param title: 章节标题
 ui_draw_section() {
     ui_draw_line
@@ -56,8 +59,9 @@ ui_draw_section() {
     ui_draw_line
 }
 
-# 绘制菜单�?# @param num: 菜单编号
-# @param text: 菜单文本
+# 绘制菜单项
+# @param num: 选项编号
+# @param text: 选项文本
 ui_draw_menu_item() {
     local num="$1"
     local text="$2"
@@ -66,9 +70,14 @@ ui_draw_menu_item() {
 }
 
 # ==============================================================================
-# 进度条显示函�?# ==============================================================================
+# 进度条绘制函数
+# ==============================================================================
 
-# 绘制进度�?# @param current: 当前进度�?# @param total: 总�?# @param width: 进度条宽度（可选，默认46�?# @param label: 标签（可选）
+# 绘制进度条
+# @param current: 当前值
+# @param total: 总值
+# @param width: 进度条宽度（可选，默认46）
+# @param label: 标签文本（可选）
 ui_draw_progress_bar() {
     local current=$1
     local total=$2
@@ -77,7 +86,7 @@ ui_draw_progress_bar() {
 
     [[ -n "${label}" ]] && echo -ne "${COLOR_WHITE}${label}${COLOR_NC} "
 
-    # 防止除零
+    # 边界检查
     [[ "${total}" -eq 0 ]] && total=1
     [[ "${current}" -gt "${total}" ]] && current=${total}
 
@@ -85,7 +94,7 @@ ui_draw_progress_bar() {
     local empty=$((width - filled)) || true
     local percent=$((current * 100 / total)) || true
 
-    # 颜色选择
+    # 根据百分比选择颜色
     local bar_color="${COLOR_GREEN}"
     if [[ ${percent} -ge ${PROGRESS_THRESHOLD_CRITICAL} ]]; then
         bar_color="${COLOR_RED}"
@@ -95,12 +104,14 @@ ui_draw_progress_bar() {
         bar_color="${COLOR_CYAN}"
     fi
 
-    # 渲染进度�?    echo -ne "${COLOR_WHITE}[${COLOR_NC}"
+    # 绘制进度条
+    echo -ne "${COLOR_WHITE}[${COLOR_NC}"
     local filled_bar=$(printf "%${filled}s" '' | tr ' ' '=')
     local empty_bar=$(printf "%${empty}s" '' | tr ' ' '-')
     echo -ne "${bar_color}${filled_bar}${COLOR_NC}${COLOR_WHITE}${empty_bar}${COLOR_NC}]${COLOR_NC} "
 
-    # 渲染百分�?    if [[ ${percent} -ge 90 ]]; then
+    # 绘制百分比
+    if [[ ${percent} -ge 90 ]]; then
         echo -e "${COLOR_RED}${percent}%${COLOR_NC}"
     elif [[ ${percent} -ge 70 ]]; then
         echo -e "${COLOR_YELLOW}${percent}%${COLOR_NC}"
@@ -112,16 +123,20 @@ ui_draw_progress_bar() {
 }
 
 # ==============================================================================
-# 压缩比图表显示函�?# ==============================================================================
+# 压缩比图表绘制函数
+# ==============================================================================
 
-# 绘制压缩比图�?# @param ratio: 压缩�?# @param width: 图表宽度（可选，默认46�?ui_draw_compression_chart() {
+# 绘制压缩比图表
+# @param ratio: 压缩比
+# @param width: 图表宽度（可选，默认46）
+ui_draw_compression_chart() {
     local ratio=$1
     local width=${2:-46}
 
     local filled=0
     local bar_color="${COLOR_GREEN}"
 
-    # 使用awk进行浮点比较
+    # 根据压缩比确定填充比例
     if compare_float "ge" "${ratio}" "${COMPRESSION_RATIO_EXCELLENT}"; then
         filled=$((width * 100 / 100)) || true
         bar_color="${COLOR_GREEN}"
@@ -138,7 +153,7 @@ ui_draw_progress_bar() {
 
     local empty=$((width - filled))
 
-    echo -ne "${COLOR_CYAN}压缩�? ${ratio}x ${COLOR_NC}"
+    echo -ne "${COLOR_CYAN}压缩比: ${ratio}x ${COLOR_NC}"
 
     echo -ne "${COLOR_WHITE}[${COLOR_NC}"
     local filled_bar=$(printf "%${filled}s" '' | tr ' ' '=')
@@ -150,8 +165,11 @@ ui_draw_progress_bar() {
 # 交互函数
 # ==============================================================================
 
-# 确认对话�?# @param message: 确认消息
-# @param default: 默认值（Y/n或y/N，默认N�?# @return: 0为确认，1为取�?ui_confirm() {
+# 确认对话框
+# @param message: 提示消息
+# @param default: 默认值（Y/n或y/N，默认N）
+# @return: 0表示确认，1表示取消
+ui_confirm() {
     local message="$1"
     local default="${2:-N}"
     local prompt
@@ -172,9 +190,9 @@ ui_draw_progress_bar() {
     fi
 }
 
-# 暂停等待用户输入
+# 暂停等待
 ui_pause() {
-    echo -ne "${COLOR_CYAN}�?Enter 继续...${COLOR_NC}"
+    echo -ne "${COLOR_CYAN}按Enter继续...${COLOR_NC}"
     read -r
 }
 
@@ -183,8 +201,8 @@ ui_clear() {
     clear
 }
 
-# 获取用户输入
-# @param prompt: 提示信息
+# 输入框
+# @param prompt: 提示文本
 # @param default: 默认值（可选）
 # @return: 用户输入
 ui_input() {
@@ -202,7 +220,8 @@ ui_input() {
     fi
 }
 
-# 获取密码输入（不回显�?# @param prompt: 提示信息
+# 密码输入框
+# @param prompt: 提示文本
 # @return: 密码
 ui_password() {
     local prompt="$1"
@@ -215,12 +234,13 @@ ui_password() {
 }
 
 # ==============================================================================
-# 选择菜单
+# 菜单函数
 # ==============================================================================
 
-# 单选菜�?# @param title: 菜单标题
-# @param options: 选项数组
-# @return: 选中的索引（�?开始）
+# 单选菜单
+# @param title: 菜单标题
+# @param options: 选项列表
+# @return: 选中的选项编号（从1开始）
 ui_select_menu() {
     local title="$1"
     shift
@@ -248,14 +268,16 @@ ui_select_menu() {
             return 0
         fi
 
-        echo -e "${COLOR_RED}无效输入${COLOR_NC}"
+        echo -e "${COLOR_RED}无效选择${COLOR_NC}"
         sleep 1
     done
 }
 
-# 多选菜�?# @param title: 菜单标题
-# @param options: 选项数组
-# @return: 选中的索引列表（逗号分隔�?ui_multi_select_menu() {
+# 多选菜单
+# @param title: 菜单标题
+# @param options: 选项列表
+# @return: 选中的选项编号（逗号分隔）
+ui_multi_select_menu() {
     local title="$1"
     shift
     local options=("$@")
@@ -264,7 +286,7 @@ ui_select_menu() {
     while true; do
         ui_clear
         ui_draw_header "${title}"
-        ui_draw_row "  使用空格选择，Enter确认"
+        ui_draw_row "  使用方向键选择，空格切换，Enter确认"
         ui_draw_line
 
         local i=1
@@ -273,17 +295,18 @@ ui_select_menu() {
             if [[ "${selected[$i]}" == "1" ]]; then
                 marker="${COLOR_GREEN}*${COLOR_NC}"
             fi
-            printf "${COLOR_CYAN}�?{COLOR_NC} ${marker} %2d. %s$(printf '%*s' $((UI_WIDTH - ${#option} - 8)) '')${COLOR_CYAN}�?{COLOR_NC}\n" "${i}" "${option}"
+            printf "${COLOR_CYAN}│${COLOR_NC} ${marker} %2d. %s$(printf '%*s' $((UI_WIDTH - ${#option} - 8)) '')${COLOR_CYAN}│${COLOR_NC}\n" "${i}" "${option}"
             ((i++)) || true
         done
 
         ui_draw_bottom
         echo ""
-        echo -ne "${COLOR_WHITE}请选择 [1-${#options[@]} �?Enter确认]: ${COLOR_NC}"
+        echo -ne "${COLOR_WHITE}请选择 [1-${#options[@]} 空格切换 Enter确认]: ${COLOR_NC}"
         read -r choice
 
         if [[ -z "${choice}" ]]; then
-            # 返回选中的索�?            local result=""
+            # 返回选择结果
+            local result=""
             for i in "${!selected[@]}"; do
                 if [[ "${selected[$i]}" == "1" ]]; then
                     [[ -n "${result}" ]] && result+=","
@@ -310,22 +333,25 @@ ui_select_menu() {
 # 表格显示函数
 # ==============================================================================
 
-# 显示简单表�?# @param headers: 表头数组
-# @param rows: 行数组（每行是一个数组）
+# 显示表格
+# @param headers: 表头数组
+# @param rows: 行数据数组（每个元素是一行数据）
 ui_show_table() {
     local headers=("$@")
     shift
     local -a rows=()
 
-    # 计算每列宽度
+    # 计算列宽
     local -a col_widths=()
     local num_cols=${#headers[@]}
 
-    # 初始化列�?    for ((i=0; i<num_cols; i++)); do
+    # 初始化为表头宽度
+    for ((i=0; i<num_cols; i++)); do
         col_widths[$i]=${#headers[$i]}
     done
 
-    # 更新列宽（这里简化处理，实际应遍历所有行�?    local max_width=$((UI_WIDTH - 4))
+    # 计算最大列宽（限制在UI宽度内）
+    local max_width=$((UI_WIDTH - 4))
     local col_width=$((max_width / num_cols))
 
     for ((i=0; i<num_cols; i++)); do
@@ -344,8 +370,8 @@ ui_show_table() {
     ui_draw_row " ${header_row}"
     ui_draw_line
 
-    # 绘制数据行（简化处理）
-    ui_draw_row " ${COLOR_YELLOW}暂无数据${COLOR_NC}"
+    # 显示占位行（实际使用时传入数据）
+    ui_draw_row " ${COLOR_YELLOW}表格数据${COLOR_NC}"
 
     ui_draw_bottom
 }

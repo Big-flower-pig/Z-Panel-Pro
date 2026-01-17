@@ -1,0 +1,316 @@
+# ==============================================================================
+# Z-Panel Pro V8.1 - 轻量级Kubernetes部署配置
+# ==============================================================================
+# @description    轻量级模式K8s部署（1 CPU, 100MB RAM）
+# @version       8.1.0-Lightweight
+# ==============================================================================
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zpanel-lightweight
+  labels:
+    app: zpanel-pro
+    mode: lightweight
+    version: "8.1.0"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zpanel-lightweight-config
+  namespace: zpanel-lightweight
+  labels:
+    app: zpanel-pro
+    mode: lightweight
+data:
+  ZPANEL_MODE: "lightweight"
+  ZPANEL_LOG_LEVEL: "error"
+  ZPANEL_TUI_ENABLED: "true"
+  ZPANEL_DECISION_ENGINE_ENABLED: "true"
+  ZPANEL_DB_TYPE: "memory"
+  ZPANEL_MAX_MEMORY: "80M"
+  ZPANEL_ZRAM_ENABLED: "true"
+  ZPANEL_ZRAM_SIZE: "128M"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: zpanel-lightweight-secret
+  namespace: zpanel-lightweight
+  labels:
+    app: zpanel-pro
+    mode: lightweight
+type: Opaque
+stringData:
+  ADMIN_PASSWORD: "changeme"
+  API_KEY: "changeme"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zpanel-lightweight
+  namespace: zpanel-lightweight
+  labels:
+    app: zpanel-pro
+    mode: lightweight
+    version: "8.1.0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zpanel-pro
+      mode: lightweight
+  template:
+    metadata:
+      labels:
+        app: zpanel-pro
+        mode: lightweight
+        version: "8.1.0"
+    spec:
+      serviceAccountName: zpanel-lightweight
+      containers:
+        - name: zpanel-lightweight
+          image: ghcr.io/z-panel-pro/zpanel-pro:latest-lightweight
+          imagePullPolicy: IfNotPresent
+          command: ["./Z-Panel.sh"]
+          args: ["tui"]
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - SYS_ADMIN
+          env:
+            - name: ZPANEL_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: zpanel-lightweight-config
+                  key: ZPANEL_MODE
+            - name: ZPANEL_LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: zpanel-lightweight-config
+                  key: ZPANEL_LOG_LEVEL
+            - name: ZPANEL_TUI_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: zpanel-lightweight-config
+                  key: ZPANEL_TUI_ENABLED
+            - name: ZPANEL_DECISION_ENGINE_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: zpanel-lightweight-config
+                  key: ZPANEL_DECISION_ENGINE_ENABLED
+            - name: ZPANEL_DB_TYPE
+              valueFrom:
+                configMapKeyRef:
+                  name: zpanel-lightweight-config
+                  key: ZPANEL_DB_TYPE
+            - name: ZPANEL_MAX_MEMORY
+              valueFrom:
+                configMapKeyRef:
+                  name: zpanel-lightweight-config
+                  key: ZPANEL_MAX_MEMORY
+            - name: ZPANEL_ZRAM_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: zpanel-lightweight-config
+                  key: ZPANEL_ZRAM_ENABLED
+            - name: ZPANEL_ZRAM_SIZE
+              valueFrom:
+                configMapKeyRef:
+                  name: zpanel-lightweight-config
+                  key: ZPANEL_ZRAM_SIZE
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "128Mi"
+          volumeMounts:
+            - name: dev
+              mountPath: /dev
+            - name: sys
+              mountPath: /sys
+            - name: proc
+              mountPath: /proc
+            - name: data
+              mountPath: /opt/Z-Panel-Pro/data
+            - name: cache
+              mountPath: /opt/Z-Panel-Pro/cache
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "ps aux | grep Z-Panel | grep -v grep || exit 1"
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "test -f /opt/Z-Panel-Pro/data/ready || exit 1"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: proc
+          hostPath:
+            path: /proc
+        - name: data
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zpanel-lightweight
+  namespace: zpanel-lightweight
+  labels:
+    app: zpanel-pro
+    mode: lightweight
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: api
+  selector:
+    app: zpanel-pro
+    mode: lightweight
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: zpanel-lightweight
+  namespace: zpanel-lightweight
+  labels:
+    app: zpanel-pro
+    mode: lightweight
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: zpanel-lightweight
+  namespace: zpanel-lightweight
+  labels:
+    app: zpanel-pro
+    mode: lightweight
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets", "pods"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: zpanel-lightweight
+  namespace: zpanel-lightweight
+  labels:
+    app: zpanel-pro
+    mode: lightweight
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: zpanel-lightweight
+subjects:
+  - kind: ServiceAccount
+    name: zpanel-lightweight
+    namespace: zpanel-lightweight
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: zpanel-lightweight-pdb
+  namespace: zpanel-lightweight
+  labels:
+    app: zpanel-pro
+    mode: lightweight
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: zpanel-pro
+      mode: lightweight
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zpanel-lightweight-netpol
+  namespace: zpanel-lightweight
+  labels:
+    app: zpanel-pro
+    mode: lightweight
+spec:
+  podSelector:
+    matchLabels:
+      app: zpanel-pro
+      mode: lightweight
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: zpanel-lightweight
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+
+---
+# Prometheus ServiceMonitor (需要Prometheus Operator)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: zpanel-lightweight
+  namespace: zpanel-lightweight
+  labels:
+    app: zpanel-pro
+    mode: lightweight
+spec:
+  selector:
+    matchLabels:
+      app: zpanel-pro
+      mode: lightweight
+  endpoints:
+    - port: api
+      interval: 30s
+      path: /metrics
