@@ -10,6 +10,17 @@
 set -e
 
 # ==============================================================================
+# 检测是否为root用户
+# ==============================================================================
+if [[ $EUID -ne 0 ]]; then
+    echo "错误: 此脚本需要root权限"
+    echo "请使用以下命令之一运行:"
+    echo "  sudo bash $0"
+    echo "  或者以root用户身份运行"
+    exit 1
+fi
+
+# ==============================================================================
 # 配置变量
 # ==============================================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -104,9 +115,18 @@ install_dependencies() {
         exit 1
     fi
 
+    log_info "使用包管理器: ${PKG_MANAGER}"
+
     # 安装基础依赖
-    ${PKG_MANAGER} update -y
-    ${PKG_MANAGER} install -y bash bc curl jq 2>/dev/null || true
+    case "${PKG_MANAGER}" in
+        apt-get)
+            apt-get update -y || true
+            apt-get install -y bash bc curl jq 2>/dev/null || log_warning "部分依赖安装失败"
+            ;;
+        yum|dnf)
+            ${PKG_MANAGER} install -y bash bc curl jq 2>/dev/null || log_warning "部分依赖安装失败"
+            ;;
+    esac
 
     log_success "依赖安装完成"
 }
@@ -120,6 +140,8 @@ create_directories() {
     mkdir -p "${DATA_DIR}"
     mkdir -p "${LOG_DIR}"
     mkdir -p "${CONFIG_DIR}"
+    mkdir -p "/opt/Z-Panel-Pro/data/security"
+    mkdir -p "/opt/Z-Panel-Pro/logs/security"
 
     log_success "目录创建完成"
 }
@@ -131,10 +153,14 @@ copy_files() {
     log_info "复制文件..."
 
     # 复制核心库
-    cp -r "${SCRIPT_DIR}/lib" "${SCRIPT_DIR}/lib.bak" 2>/dev/null || true
+    if [[ -d "${SCRIPT_DIR}/lib" ]]; then
+        cp -r "${SCRIPT_DIR}/lib" "${SCRIPT_DIR}/lib.bak" 2>/dev/null || true
+    fi
 
     # 复制轻量级配置
-    cp "${CONFIG_DIR}/lightweight.conf" "${DATA_DIR}/zpanel.conf"
+    if [[ -f "${CONFIG_DIR}/lightweight.conf" ]]; then
+        cp "${CONFIG_DIR}/lightweight.conf" "${DATA_DIR}/zpanel.conf"
+    fi
 
     log_success "文件复制完成"
 }
@@ -197,19 +223,24 @@ install_zram() {
     log_info "安装ZRAM..."
 
     # 安装zram-tools
-    if [[ "${PKG_MANAGER}" == "apt-get" ]]; then
-        apt-get install -y zram-tools
-    elif [[ "${PKG_MANAGER}" == "yum" ]] || [[ "${PKG_MANAGER}" == "dnf" ]]; then
-        yum install -y zram || dnf install -y zram
-    fi
+    case "${PKG_MANAGER}" in
+        apt-get)
+            apt-get install -y zram-tools 2>/dev/null || log_warning "ZRAM安装失败"
+            ;;
+        yum|dnf)
+            ${PKG_MANAGER} install -y zram 2>/dev/null || log_warning "ZRAM安装失败"
+            ;;
+    esac
 
     # 配置ZRAM
-    cat > /etc/default/zramswap <<'EOF'
+    if [[ -d /etc/default ]]; then
+        cat > /etc/default/zramswap <<'EOF'
 # ZRAM交换配置
 ALGO=lzo
 PERCENT=50
 PRIORITY=100
 EOF
+    fi
 
     log_success "ZRAM安装完成"
 }
@@ -221,7 +252,8 @@ optimize_system() {
     log_info "优化系统参数..."
 
     # 创建sysctl配置
-    cat > /etc/sysctl.d/99-zpanel-lightweight.conf <<'EOF'
+    if [[ -d /etc/sysctl.d ]]; then
+        cat > /etc/sysctl.d/99-zpanel-lightweight.conf <<'EOF'
 # Z-Panel Pro 轻量级模式优化
 vm.swappiness=10
 vm.vfs_cache_pressure=50
@@ -232,14 +264,17 @@ net.core.somaxconn=128
 net.ipv4.tcp_max_syn_backlog=128
 EOF
 
-    # 应用sysctl配置
-    sysctl -p /etc/sysctl.d/99-zpanel-lightweight.conf 2>/dev/null || true
+        # 应用sysctl配置
+        sysctl -p /etc/sysctl.d/99-zpanel-lightweight.conf 2>/dev/null || true
+    fi
 
     # 优化ulimit
-    cat > /etc/security/limits.d/99-zpanel.conf <<'EOF'
+    if [[ -d /etc/security/limits.d ]]; then
+        cat > /etc/security/limits.d/99-zpanel.conf <<'EOF'
 * soft nofile 4096
 * hard nofile 8192
 EOF
+    fi
 
     log_success "系统优化完成"
 }
@@ -249,6 +284,12 @@ EOF
 # ==============================================================================
 create_systemd_service() {
     log_info "创建systemd服务..."
+
+    # 检查systemd是否存在
+    if ! command -v systemctl &> /dev/null; then
+        log_warning "systemd未找到，跳过服务创建"
+        return 0
+    fi
 
     cat > /etc/systemd/system/zpanel-lightweight.service <<EOF
 [Unit]
@@ -271,7 +312,7 @@ LimitMEM=100M
 WantedBy=multi-user.target
 EOF
 
-    systemctl daemon-reload
+    systemctl daemon-reload 2>/dev/null || true
     systemctl enable zpanel-lightweight.service 2>/dev/null || true
 
     log_success "systemd服务创建完成"
@@ -294,9 +335,9 @@ show_install_info() {
     echo "  ${DATA_DIR}/start.sh"
     echo ""
     echo "服务管理:"
-    echo "  sudo systemctl start zpanel-lightweight"
-    echo "  sudo systemctl stop zpanel-lightweight"
-    echo "  sudo systemctl status zpanel-lightweight"
+    echo "  systemctl start zpanel-lightweight"
+    echo "  systemctl stop zpanel-lightweight"
+    echo "  systemctl status zpanel-lightweight"
     echo ""
     echo "轻量级模式特性:"
     echo "  - 仅启用核心优化功能"
