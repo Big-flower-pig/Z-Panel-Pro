@@ -406,7 +406,7 @@ ui_draw_section() {
     ui_draw_line
 }
 
-# 进度条渲染函数
+# 进度条显示函数
 ui_draw_progress_bar() {
     local current=$1
     local total=$2
@@ -451,7 +451,7 @@ ui_draw_progress_bar() {
     fi
 }
 
-# 压缩比图表渲染函数
+# 压缩比图表显示函数
 ui_draw_compression_chart() {
     local ratio=$1
     local width=${2:-46}
@@ -484,7 +484,7 @@ ui_draw_compression_chart() {
     echo -e "${bar_color}${filled_bar}${COLOR_NC}${COLOR_WHITE}${empty_bar}${COLOR_NC}]${COLOR_NC}"
 }
 
-# 菜单项渲染函数
+# 菜单项显示函数
 ui_draw_menu_item() {
     local num="$1"
     local text="$2"
@@ -768,9 +768,9 @@ save_strategy_config() {
 # 自动生成，请勿手动修改
 #
 # STRATEGY_MODE: 优化策略模式
-#   - conservative: 保守模式，优先稳定性
+#   - conservative: 保守模式，优先稳定
 #   - balance: 平衡模式，性能与稳定兼顾（推荐）
-#   - aggressive: 激进模式，最大化利用内存
+#   - aggressive: 激进模式，最大化使用内存
 # ============================================================================
 
 STRATEGY_MODE=${STRATEGY_MODE}
@@ -916,7 +916,7 @@ initialize_zram_device() {
     return 0
 }
 
-# 检测最佳压缩算法
+# 检测最优压缩算法
 detect_best_algorithm() {
     log_info "检测最优压缩算法..."
 
@@ -1224,7 +1224,7 @@ start_zram_service() {
             systemctl start zram.service > /dev/null 2>&1 && {
                 log_info "zram.service 已启动"
             } || {
-                log_warn "zram.service 启动失败，但 ZRAM 已在当前会话中生效"
+                log_warn "zram.service 启动失败，但 ZRAM 已在当前会话中生成"
             }
         fi
     fi
@@ -1578,7 +1578,7 @@ apply_oom_protection() {
         done <<< "${pids}"
     fi
 
-    log_info "OOM 保护已启用 (已保护: ${protected} 个进程, 失败: ${failed} 个)"
+    log_info "OOM 保护已启用 (已保护 ${protected} 个进程, 失败: ${failed} 个)"
 }
 
 # 计算动态swappiness
@@ -1646,7 +1646,7 @@ save_kernel_config() {
 #
 # 脏数据策略 (I/O 熔断保护):
 #   vm.dirty_ratio: 脏数据占系统内存的最大百分比
-#   vm.dirty_background_ratio: 后台写入开始时的脏数据百分比
+#   vm.dirty_background_ratio: 后台写入开始的脏数据百分比
 #   vm.dirty_expire_centisecs: 脏数据过期时间（厘秒）
 #   vm.dirty_writeback_centisecs: 后台写入间隔（厘秒）
 #
@@ -1969,7 +1969,7 @@ show_status() {
     # 系统信息
     ui_draw_section "[SYSTEM] 信息"
     ui_draw_row " 发行版: ${COLOR_GREEN}${SYSTEM_INFO[distro]} ${SYSTEM_INFO[version]}${COLOR_NC}"
-    ui_draw_row " 内存: ${COLOR_GREEN}${SYSTEM_INFO[total_memory_mb]}MB${COLOR_NC}  CPU: ${COLOR_GREEN}${SYSTEM_INFO[cpu_cores]}核心${COLOR_NC}  策略: ${COLOR_YELLOW}${STRATEGY_MODE}${COLOR_NC}"
+    ui_draw_row " 内存: ${COLOR_GREEN}${SYSTEM_INFO[total_memory_mb]}MB${COLOR_NC} CPU: ${COLOR_GREEN}${SYSTEM_INFO[cpu_cores]}核心${COLOR_NC} 策略: ${COLOR_YELLOW}${STRATEGY_MODE}${COLOR_NC}"
 
     # ZRAM状态
     ui_draw_section "[ZRAM] 状态"
@@ -1996,8 +1996,8 @@ show_status() {
 
         [[ -z "${ratio}" ]] || [[ "${ratio}" == "0" ]] && ratio="1.00"
 
-        ui_draw_row " 算法: ${COLOR_CYAN}${algo}${COLOR_NC}  大小: ${COLOR_CYAN}${disk_size}${COLOR_NC}"
-        ui_draw_row " 数据: ${COLOR_CYAN}${data_size}${COLOR_NC}  压缩: ${COLOR_CYAN}${comp_size}${COLOR_NC}"
+        ui_draw_row " 算法: ${COLOR_CYAN}${algo}${COLOR_NC} 大小: ${COLOR_CYAN}${disk_size}${COLOR_NC}"
+        ui_draw_row " 数据: ${COLOR_CYAN}${data_size}${COLOR_NC} 压缩: ${COLOR_CYAN}${comp_size}${COLOR_NC}"
         ui_draw_row " 压缩比:"
         echo -ne "  "
         ui_draw_compression_chart "${ratio}" 46
@@ -2013,7 +2013,7 @@ show_status() {
     if [[ ${swap_total} -eq 0 ]]; then
         ui_draw_row " 状态: ${COLOR_RED}未启用${COLOR_NC}"
     else
-        ui_draw_row " 总量: ${COLOR_CYAN}${swap_total}MB${COLOR_NC}  已用: ${COLOR_CYAN}${swap_used}MB${COLOR_NC}"
+        ui_draw_row " 总量: ${COLOR_CYAN}${swap_total}MB${COLOR_NC} 已用: ${COLOR_CYAN}${swap_used}MB${COLOR_NC}"
         ui_draw_row " Swap 负载:"
         echo -ne "  "
         ui_draw_progress_bar "${swap_used}" "${swap_total}" 46 ""
@@ -2102,16 +2102,16 @@ strategy_menu() {
 
         ui_draw_header "选择优化模式"
         ui_draw_menu_item "1" "Conservative (保守)"
-        ui_draw_row "     • 最稳定，适合路由器/NAS"
-        ui_draw_row "     • ZRAM: 80% | Swap: 100% | Swappiness: 60"
+        ui_draw_row "     └─ 最稳定，适合路由器/NAS"
+        ui_draw_row "     └─ ZRAM: 80% | Swap: 100% | Swappiness: 60"
         ui_draw_line
         ui_draw_menu_item "2" "Balance (平衡)  ${COLOR_YELLOW}[推荐]${COLOR_NC}"
-        ui_draw_row "     • 性能与稳定兼顾，日常使用"
-        ui_draw_row "     • ZRAM: 120% | Swap: 150% | Swappiness: 85"
+        ui_draw_row "     └─ 性能与稳定兼顾，日常使用"
+        ui_draw_row "     └─ ZRAM: 120% | Swap: 150% | Swappiness: 85"
         ui_draw_line
         ui_draw_menu_item "3" "Aggressive (激进)"
-        ui_draw_row "     • 极限榨干内存，适合极度缺内存"
-        ui_draw_row "     • ZRAM: 180% | Swap: 200% | Swappiness: 100"
+        ui_draw_row "     └─ 极限榨干内存，适合极度缺内存"
+        ui_draw_row "     └─ ZRAM: 180% | Swap: 200% | Swappiness: 100"
         ui_draw_line
         ui_draw_menu_item "0" "返回"
         ui_draw_bottom
@@ -2249,8 +2249,8 @@ swap_menu() {
                 ui_draw_header "配置物理 Swap"
                 echo ""
                 echo "物理 Swap 将与 ZRAM 配合使用："
-                echo "  • ZRAM (优先级 ${ZRAM_PRIORITY}): 压缩内存，速度快"
-                echo "  • 物理 Swap (优先级 ${PHYSICAL_SWAP_PRIORITY}): 大容量，作为后备"
+                echo "  └─ ZRAM (优先级${ZRAM_PRIORITY}): 压缩内存，速度快"
+                echo "  └─ 物理 Swap (优先级${PHYSICAL_SWAP_PRIORITY}): 大容量，作为后备"
                 echo ""
 
                 local zram_ratio phys_limit swap_size swappiness dirty_ratio min_free
@@ -2272,7 +2272,7 @@ swap_menu() {
                         final_size=$(echo "${swap_info}" | awk '{print $1}')
                         save_swap_config "${final_size}" "true"
                         echo ""
-                        echo -e "${COLOR_GREEN}[OK] 物理 Swap 配置成功！${COLOR_NC}"
+                        echo -e "${COLOR_GREEN}[OK] 物理 Swap 配置成功${COLOR_NC}"
                         echo "  大小: ${final_size}MB"
                         echo "  优先级: ${PHYSICAL_SWAP_PRIORITY} (低于 ZRAM)"
                     else
@@ -2299,7 +2299,7 @@ swap_menu() {
                 ui_draw_header "Swap 详细信息"
 
                 echo ""
-                echo "=== 系统所有 Swap 设备 ==="
+                echo "=== 系统 所有 Swap 设备 ==="
                 echo ""
                 swapon --show
 
@@ -2446,7 +2446,7 @@ view_log_list() {
     log_files=$(find "${LOG_DIR}" -name "zpanel_*.log" -type f 2>/dev/null | sort -r)
 
     if [[ -z "${log_files}" ]]; then
-        echo -e "${COLOR_YELLOW}未找到日志文件${COLOR_NC}"
+        echo -e "${COLOR_YELLOW}未找到日期日志文件${COLOR_NC}"
     else
         echo "序号  日期        大小    文件名"
         echo "----  ----------  ------  ----------------------------------------"
@@ -2502,7 +2502,7 @@ view_log_details() {
     echo "修改时间: ${mtime}"
     echo ""
     echo "=============================================================================="
-    echo "最近 100 行日志:"
+    echo "最近 100 行日志"
     echo "=============================================================================="
     echo ""
 
@@ -2636,8 +2636,8 @@ set_log_level() {
     echo "日志级别说明:"
     echo "  0 - DEBUG  : 显示所有日志（调试用）"
     echo "  1 - INFO   : 显示信息和更高级别（推荐）"
-    echo "  2 - WARN   : 仅显示警告和错误"
-    echo "  3 - ERROR  : 仅显示错误"
+    echo "  2 - WARN   : 只显示警告和错误"
+    echo "  3 - ERROR  : 只显示错误"
     echo ""
 
     echo -ne "请输入新的日志级别 [0-3] (默认 ${CURRENT_LOG_LEVEL}): "
@@ -2685,13 +2685,13 @@ quick_optimize() {
     ui_clear
 
     ui_draw_header "一键优化"
-    ui_draw_row " 将执行以下操作:"
+    ui_draw_row " 将执行以下操作"
     ui_draw_line
     ui_draw_row "  ${COLOR_GREEN}[OK]${COLOR_NC} 创建系统备份"
     ui_draw_row "  ${COLOR_GREEN}[OK]${COLOR_NC} 配置 ZRAM (策略: ${COLOR_YELLOW}${STRATEGY_MODE}${COLOR_NC})"
     ui_draw_row "  ${COLOR_GREEN}[OK]${COLOR_NC} 配置物理 Swap (优先级 ${PHYSICAL_SWAP_PRIORITY})"
     ui_draw_row "  ${COLOR_GREEN}[OK]${COLOR_NC} 配置虚拟内存策略 (含 I/O 熔断/OOM 保护)"
-    ui_draw_row "  ${COLOR_GREEN}[OK]${COLOR_NC} 配置开机自启动"
+    ui_draw_row "  ${COLOR_GREEN}[OK]${COLOR_NC} 配置开机自动启动"
     ui_draw_bottom
     echo ""
 
@@ -2722,7 +2722,7 @@ quick_optimize() {
     # 显示结果
     if [[ ${errors} -gt 0 ]]; then
         echo ""
-        echo "注意: 优化过程中遇到 ${errors} 个错误，请检查日志"
+        echo "注意: 优化过程中遇到 ${errors} 个错误，请查看日志"
         echo "日志目录: ${LOG_DIR}"
     else
         echo ""
@@ -2732,9 +2732,9 @@ quick_optimize() {
         echo "[OK] 虚拟内存策略已应用（含 I/O 熔断/OOM 保护）"
         echo "[OK] 策略模式: ${STRATEGY_MODE}"
         echo ""
-        echo "双 Swap 架构说明："
-        echo "  • ZRAM: 压缩内存，速度快，优先使用"
-        echo "  • 物理 Swap: 大容量，作为 ZRAM 的后备"
+        echo "Swap 架构说明："
+        echo "  └─ ZRAM: 压缩内存，速度快，优先使用"
+        echo "  └─ 物理 Swap: 大容量，作为 ZRAM 的后备"
     fi
     ui_pause
 }
@@ -2777,13 +2777,13 @@ install_global_shortcut() {
         fi
 
         log_warn "全局快捷键 'z' 已存在: ${shortcut_path}"
-        echo -e "${COLOR_YELLOW}检测到现有快捷键指向:${COLOR_NC} ${existing_link}"
+        echo -e "${COLOR_YELLOW}检测到现有快捷键指向${COLOR_NC} ${existing_link}"
         echo -e "${COLOR_YELLOW}当前脚本路径:${COLOR_NC} ${script_path}"
 
         local backup_path="${shortcut_path}.bak.$(date +%Y%m%d_%H%M%S)"
         if cp "${shortcut_path}" "${backup_path}" 2>/dev/null; then
-            log_info "已备份现有快捷键到: ${backup_path}"
-            echo -e "${COLOR_GREEN}[OK]${COLOR_NC} 已备份现有快捷键到: ${COLOR_CYAN}${backup_path}${COLOR_NC}"
+            log_info "已备份现有快捷键到 ${backup_path}"
+            echo -e "${COLOR_GREEN}[OK]${COLOR_NC} 已备份现有快捷键到 ${COLOR_CYAN}${backup_path}${COLOR_NC}"
         else
             log_warn "备份现有快捷键失败，继续覆盖"
         fi
