@@ -632,18 +632,16 @@ get_zram_usage() {
         return
     fi
 
-    # 统一转换为MB单位
-    local zram_total=$(swapon --show=SIZE --noheadings 2>/dev/null | grep zram | awk '{
-        size = $1
-        unit = substr($1, length($1))
-        num = substr($1, 1, length($1)-1)
-        if (unit == "G" || unit == "Gi") print num * 1024
-        else if (unit == "M" || unit == "Mi") print num
-        else if (unit == "K" || unit == "Ki") print num / 1024
-        else print num / 1048576
-    }' | head -1)
+    # 一次性获取所有 ZRAM 信息，减少系统调用
+    local zram_info=$(swapon --show=SIZE,USED --noheadings 2>/dev/null | grep zram | head -1)
 
-    local zram_used=$(swapon --show=USED --noheadings 2>/dev/null | grep zram | awk '{
+    if [[ -z "$zram_info" ]]; then
+        echo "0 0"
+        return
+    fi
+
+    # 解析并转换单位为 MB（使用单次 awk 调用）
+    local zram_total=$(echo "$zram_info" | awk '{
         size = $1
         unit = substr($1, length($1))
         num = substr($1, 1, length($1)-1)
@@ -651,7 +649,17 @@ get_zram_usage() {
         else if (unit == "M" || unit == "Mi") print num
         else if (unit == "K" || unit == "Ki") print num / 1024
         else print num / 1048576
-    }' | head -1)
+    }')
+
+    local zram_used=$(echo "$zram_info" | awk '{
+        size = $2
+        unit = substr($2, length($2))
+        num = substr($2, 1, length($2)-1)
+        if (unit == "G" || unit == "Gi") print num * 1024
+        else if (unit == "M" || unit == "Mi") print num
+        else if (unit == "K" || unit == "Ki") print num / 1024
+        else print num / 1048576
+    }')
 
     [[ -z "$zram_total" || "$zram_total" == "0" ]] && zram_total=1
     [[ -z "$zram_used" ]] && zram_used=0
@@ -703,9 +711,16 @@ safe_source() {
     fi
 
     # 检查是否有命令执行、重定向等危险操作（排除 $VAR 引用）
-    if grep -qE '\`|\\\$\\([^)]*\)|>|<|&|;' "$file"; then
+    if grep -qE '`|\$\([^)]*\)|>|<|&|;' "$file"; then
         log error "配置文件包含危险字符: $file"
         return 1
+    fi
+
+    # 验证文件权限（只允许 root 读写）
+    local file_perms=$(stat -c "%a" "$file" 2>/dev/null || stat -f "%OLp" "$file" 2>/dev/null || echo "000")
+    if [[ "$file_perms" != "600" ]] && [[ "$file_perms" != "400" ]]; then
+        log warn "配置文件权限不安全: $file (当前: $file_perms, 建议: 600)"
+        chmod 600 "$file" 2>/dev/null || true
     fi
 
     # 直接在当前 Shell 环境中 source，确保配置变量生效
@@ -1184,10 +1199,13 @@ clean_old_logs() {
         # 检查文件大小限制
         if [[ $size_mb -gt $LOG_MAX_SIZE_MB ]]; then
             local temp_file
-            temp_file=$(mktemp "${log}.tmp.XXXXXX") || {
+            temp_file=$(mktemp) || {
                 log warn "无法创建临时文件: $log_name"
                 continue
             }
+
+            # 设置临时文件权限
+            chmod 600 "$temp_file" 2>/dev/null || true
 
             if tail -1000 "$log" > "$temp_file" && mv "$temp_file" "$log"; then
                 ((cleaned++))
@@ -1205,17 +1223,28 @@ clean_old_logs() {
             local log_age
 
             # 使用更兼容的方式计算日志天数
-            if date -d "$log_date" +%s &>/dev/null; then
-                log_age=$(( (current_time - $(date -d "$log_date" +%s)) / 86400 )) || true
+            local log_timestamp=0
+
+            # 检测date命令类型并选择合适的解析方法
+            if date --version &>/dev/null 2>&1; then
+                # GNU date (Linux)
+                log_timestamp=$(date -d "$log_date" +%s 2>/dev/null || echo 0)
             else
-                # 如果 date -d 不支持，使用文件修改时间
+                # BSD date (macOS)
+                log_timestamp=$(date -j -f "%Y%m%d" "$log_date" +%s 2>/dev/null || echo 0)
+            fi
+
+            # 如果日期解析失败，使用文件修改时间作为回退
+            if [[ $log_timestamp -eq 0 ]]; then
                 local file_mtime
                 if stat -c %Y "$log" &>/dev/null; then
                     file_mtime=$(stat -c %Y "$log")
                 else
-                    file_mtime=$(stat -f "%m" "$log")
+                    file_mtime=$(stat -f "%m" "$log" 2>/dev/null || echo 0)
                 fi
                 log_age=$(( (current_time - file_mtime) / 86400 )) || true
+            else
+                log_age=$(( (current_time - log_timestamp) / 86400 )) || true
             fi
 
             # 验证 log_age 是有效数字
@@ -1341,6 +1370,9 @@ backup_version=$SCRIPT_VERSION
 distro=$CURRENT_DISTRO
 distro_version=$CURRENT_VERSION
 strategy=$STRATEGY_MODE
+# 系统配置摘要（不包含完整配置）
+memory_mb=$TOTAL_MEMORY_MB
+cpu_cores=$CPU_CORES
 EOF
 
     # 设置备份信息文件权限
@@ -1563,11 +1595,20 @@ initialize_zram_device() {
         return 1
     }
 
-    # 停用已存在的 ZRAM swap
+    # 安全地停用已存在的 ZRAM swap
     if swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
+        local failed_devices=()
         for device in $(swapon --show=NAME --noheadings 2>/dev/null | grep zram); do
-            swapoff "$device" 2>/dev/null || true
+            if ! swapoff "$device" 2>/dev/null; then
+                log error "无法停用设备: $device"
+                failed_devices+=("$device")
+            fi
         done
+
+        if [[ ${#failed_devices[@]} -gt 0 ]]; then
+            log error "以下设备停用失败: ${failed_devices[*]}"
+            return 1
+        fi
     fi
 
     # 重置 ZRAM 设备
@@ -1682,19 +1723,23 @@ get_zram_status() {
         return
     fi
 
-    local name=$(echo "$zram_info" | awk '{print $1}')
-    local disk_size=$(echo "$zram_info" | awk '{print $2}')
-    local data_size=$(echo "$zram_info" | awk '{print $3}')
-    local comp_size=$(echo "$zram_info" | awk '{print $4}')
-    local algo=$(echo "$zram_info" | awk '{print $5}')
+    # 一次性解析所有字段，减少 awk 调用
+    local name disk_size data_size comp_size algo
+    read -r name disk_size data_size comp_size algo <<< "$zram_info"
 
     local compression_ratio="0"
     if [[ -n "$data_size" ]] && [[ -n "$comp_size" ]] && [[ "$comp_size" != "0" ]]; then
-        local data_num=$(echo "$data_size" | sed 's/[KMGT]//g' | awk '{print $1*1}')
-        local comp_num=$(echo "$comp_size" | sed 's/[KMGT]//g' | awk '{print $1*1}')
-        if (( $(awk "BEGIN {print ($comp_num > 0)}") )) && (( $(awk "BEGIN {print ($data_num > 0)}") )); then
-            compression_ratio=$(awk "BEGIN {printf \"%.2f\", $data_num / $comp_num}")
-        fi
+        # 使用单次 awk 调用计算压缩比
+        compression_ratio=$(echo "$data_size $comp_size" | awk '{
+            data_num = $1
+            comp_num = $2
+            # 移除单位后缀
+            gsub(/[KMGT]/, "", data_num)
+            gsub(/[KMGT]/, "", comp_num)
+            if (comp_num > 0 && data_num > 0) {
+                printf "%.2f", data_num / comp_num
+            }
+        }')
     fi
 
     cat <<EOF
@@ -1710,11 +1755,13 @@ get_zram_status() {
 EOF
 }
 
-configure_zram() {
+# 准备 ZRAM 配置参数
+# @param algorithm 压缩算法
+# @param mode 策略模式
+# @return 输出: "algorithm mode zram_ratio phys_limit swap_size swappiness dirty_ratio min_free zram_size"
+prepare_zram_params() {
     local algorithm=${1:-"auto"}
     local mode=${2:-"$STRATEGY_MODE"}
-
-    log info "开始配置 ZRAM (策略: $mode)..."
 
     # 验证策略模式
     validate_zram_mode "$mode" || return 1
@@ -1723,7 +1770,8 @@ configure_zram() {
     algorithm=$(get_zram_algorithm "$algorithm")
 
     # 计算策略参数
-    read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< $(calculate_strategy "$mode")
+    local zram_ratio phys_limit swap_size swappiness dirty_ratio min_free
+    read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< "$(calculate_strategy "$mode")"
 
     # 计算 ZRAM 大小
     local zram_size=$((TOTAL_MEMORY_MB * zram_ratio / 100)) || true
@@ -1734,6 +1782,90 @@ configure_zram() {
         log error "ZRAM 参数验证失败"
         return 1
     fi
+
+    echo "$algorithm $mode $zram_ratio $phys_limit $swap_size $swappiness $dirty_ratio $min_free $zram_size"
+    return 0
+}
+
+# 保存 ZRAM 配置到文件
+# @param algorithm 压缩算法
+# @param mode 策略模式
+# @param zram_ratio ZRAM 百分比
+# @param zram_size ZRAM 大小
+# @param phys_limit 物理内存限制
+save_zram_config() {
+    local algorithm=$1
+    local mode=$2
+    local zram_ratio=$3
+    local zram_size=$4
+    local phys_limit=$5
+
+    # 创建配置目录
+    if ! mkdir -p "$CONF_DIR"; then
+        log error "无法创建配置目录: $CONF_DIR"
+        return 1
+    fi
+
+    # 设置配置目录权限：仅允许 root 读写
+    chmod 700 "$CONF_DIR" 2>/dev/null || true
+
+    # 保存 ZRAM 配置
+    cat > "$ZRAM_CONFIG_FILE" <<EOF
+# ============================================================================
+# Z-Panel Pro ZRAM 配置
+# ============================================================================
+# 自动生成，请勿手动修改
+#
+# ALGORITHM: ZRAM 压缩算法 (auto/zstd/lz4/lzo)
+# STRATEGY: 使用的策略模式
+# PERCENT: ZRAM 大小占物理内存的百分比
+# PRIORITY: Swap 优先级
+# SIZE: ZRAM 设备大小（MB）
+# PHYS_LIMIT: 物理内存使用限制（MB）
+# ============================================================================
+
+ALGORITHM=$algorithm
+STRATEGY=$mode
+PERCENT=$zram_ratio
+PRIORITY=100
+SIZE=$zram_size
+PHYS_LIMIT=$phys_limit
+EOF
+
+    # 设置配置文件权限：仅允许 root 读写
+    chmod 600 "$ZRAM_CONFIG_FILE" 2>/dev/null || true
+    return 0
+}
+
+# 启动 ZRAM 服务
+start_zram_service() {
+    if command -v systemctl &> /dev/null; then
+        systemctl daemon-reload > /dev/null 2>&1
+        if systemctl is-active --quiet zram.service 2>/dev/null; then
+            log info "zram.service 已在运行，跳过启动"
+        else
+            systemctl start zram.service > /dev/null 2>&1 && {
+                log info "zram.service 已启动"
+            } || {
+                log warn "zram.service 启动失败，但 ZRAM 已在当前会话中生效"
+            }
+        fi
+    fi
+}
+
+# 配置 ZRAM（重构后的主函数）
+# @param algorithm 压缩算法
+# @param mode 策略模式
+configure_zram() {
+    local algorithm=${1:-"auto"}
+    local mode=${2:-"$STRATEGY_MODE"}
+
+    log info "开始配置 ZRAM (策略: $mode)..."
+
+    # 准备配置参数
+    local params
+    params=$(prepare_zram_params "$algorithm" "$mode") || return 1
+    read -r algorithm mode zram_ratio phys_limit swap_size swappiness dirty_ratio min_free zram_size <<< "$params"
 
     # 安装 zram-tools（如果需要）
     if ! command -v zramctl &> /dev/null; then
@@ -1767,59 +1899,19 @@ configure_zram() {
         return 1
     }
 
-    # 创建配置目录
-    if ! mkdir -p "$CONF_DIR"; then
-        log error "无法创建配置目录: $CONF_DIR"
-        return 1
-    fi
-
-    # 设置配置目录权限：仅允许 root 读写
-    chmod 700 "$CONF_DIR" 2>/dev/null || true
-
     # 保存 ZRAM 配置
-    cat > "$ZRAM_CONFIG_FILE" <<'EOF'
-# ============================================================================
-# Z-Panel Pro ZRAM 配置
-# ============================================================================
-# 自动生成，请勿手动修改
-#
-# ALGORITHM: ZRAM 压缩算法 (auto/zstd/lz4/lzo)
-# STRATEGY: 使用的策略模式
-# PERCENT: ZRAM 大小占物理内存的百分比
-# PRIORITY: Swap 优先级
-# SIZE: ZRAM 设备大小（MB）
-# PHYS_LIMIT: 物理内存使用限制（MB）
-# ============================================================================
-
-ALGORITHM=$algorithm
-STRATEGY=$mode
-PERCENT=$zram_ratio
-PRIORITY=100
-SIZE=$zram_size
-PHYS_LIMIT=$phys_limit
-EOF
-
-    # 设置配置文件权限：仅允许 root 读写
-    chmod 600 "$ZRAM_CONFIG_FILE" 2>/dev/null || true
+    save_zram_config "$algorithm" "$mode" "$zram_ratio" "$zram_size" "$phys_limit" || {
+        log error "保存 ZRAM 配置失败"
+        return 1
+    }
 
     # 创建 ZRAM 持久化服务
     create_zram_service || {
         log warn "创建 ZRAM 服务失败"
     }
 
-    # 立即启动 systemd 服务，确保配置在当前会话中即时生效
-    if command -v systemctl &> /dev/null; then
-        systemctl daemon-reload > /dev/null 2>&1
-        if systemctl is-active --quiet zram.service 2>/dev/null; then
-            log info "zram.service 已在运行，跳过启动"
-        else
-            systemctl start zram.service > /dev/null 2>&1 && {
-                log info "zram.service 已启动"
-            } || {
-                log warn "zram.service 启动失败，但 ZRAM 已在当前会话中生效"
-            }
-        fi
-    fi
+    # 启动 ZRAM 服务
+    start_zram_service
 
     # 更新 ZRAM 状态
     ZRAM_ENABLED=true
@@ -1955,6 +2047,9 @@ EOF
         # 设置 systemd 服务文件权限：仅允许 root 读写
         chmod 644 /etc/systemd/system/zram.service 2>/dev/null || true
 
+        # 设置服务文件权限：仅允许 root 读写
+        chmod 644 /etc/systemd/system/zram.service 2>/dev/null || true
+
         systemctl daemon-reload > /dev/null 2>&1
         systemctl enable zram.service > /dev/null 2>&1
 
@@ -2012,39 +2107,64 @@ apply_io_fuse_protection() {
 apply_oom_protection() {
     log info "应用 OOM 保护..."
 
-    # 安全地处理 PID 列表，避免命令注入和路径遍历风险
+    local protected=0
+    local failed=0
+
+    # 安全地处理 SSH 进程
     local pids
     pids=$(pgrep sshd 2>/dev/null) || pids=""
 
     if [[ -n "$pids" ]]; then
         while IFS= read -r pid; do
             # 验证 PID 是否为有效的数字
-            if [[ "$pid" =~ ^[0-9]+$ ]] && [[ -d "/proc/$pid" ]]; then
-                echo -1000 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
+            if [[ "$pid" =~ ^[0-9]+$ ]] && [[ -d "/proc/$pid" ]] && [[ -f "/proc/$pid/oom_score_adj" ]]; then
+                # 验证进程命令行是否为 sshd
+                local cmdline=$(cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ' | head -c 100)
+                if [[ "$cmdline" == *"sshd"* ]]; then
+                    if echo -1000 > "/proc/$pid/oom_score_adj" 2>/dev/null; then
+                        ((protected++)) || true
+                    else
+                        ((failed++)) || true
+                        log warn "设置OOM保护失败: PID $pid (sshd)"
+                    fi
+                fi
             fi
         done <<< "$pids"
     fi
 
+    # 安全地处理 systemd 进程
     pids=$(pgrep systemd 2>/dev/null) || pids=""
 
     if [[ -n "$pids" ]]; then
         while IFS= read -r pid; do
             # 验证 PID 是否为有效的数字
-            if [[ "$pid" =~ ^[0-9]+$ ]] && [[ -d "/proc/$pid" ]]; then
-                echo -1000 > "/proc/$pid/oom_score_adj" 2>/dev/null || true
+            if [[ "$pid" =~ ^[0-9]+$ ]] && [[ -d "/proc/$pid" ]] && [[ -f "/proc/$pid/oom_score_adj" ]]; then
+                # 验证进程命令行是否为 systemd
+                local cmdline=$(cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ' | head -c 100)
+                if [[ "$cmdline" == *"systemd"* ]]; then
+                    if echo -1000 > "/proc/$pid/oom_score_adj" 2>/dev/null; then
+                        ((protected++)) || true
+                    else
+                        ((failed++)) || true
+                        log warn "设置OOM保护失败: PID $pid (systemd)"
+                    fi
+                fi
             fi
         done <<< "$pids"
     fi
 
-    log info "OOM 保护已启用 (SSH, systemd)"
+    log info "OOM 保护已启用 (已保护: $protected 个进程, 失败: $failed 个)"
 }
 
-configure_virtual_memory() {
-    local mode=${1:-"$STRATEGY_MODE"}
+# 计算动态 swappiness 值
+# @param base_swappiness 基础 swappiness 值
+# @param mode 策略模式
+# @return 动态调整后的 swappiness 值
+calculate_dynamic_swappiness() {
+    local base_swappiness=$1
+    local mode=${2:-"$STRATEGY_MODE"}
 
-    log info "配置虚拟内存策略 (策略: $mode)..."
-
-    read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< $(calculate_strategy "$mode")
+    local swappiness=$base_swappiness
 
     # 使用缓存获取内存信息
     read -r mem_total _ _ _ <<< $(get_memory_info false)
@@ -2080,15 +2200,24 @@ configure_virtual_memory() {
     [[ $swappiness -lt 10 ]] && swappiness=10
     [[ $swappiness -gt 100 ]] && swappiness=100
 
-    log info "内存: ${mem_total}MB, Swap使用: ${swap_usage}%, ZRAM使用: ${zram_usage}%"
-    log info "建议 swappiness: $swappiness"
+    echo "$swappiness"
+}
+
+# 保存内核参数配置到文件
+# @param swappiness swappiness 值
+# @param dirty_ratio 脏数据比例
+# @param min_free 最小空闲内存
+save_kernel_config() {
+    local swappiness=$1
+    local dirty_ratio=$2
+    local min_free=$3
 
     mkdir -p "$CONF_DIR"
 
     # 设置配置目录权限：仅允许 root 读写
     chmod 700 "$CONF_DIR" 2>/dev/null || true
 
-    cat > "$KERNEL_CONFIG_FILE" <<'EOF'
+    cat > "$KERNEL_CONFIG_FILE" <<EOF
 # ============================================================================
 # Z-Panel Pro 内核参数配置
 # ============================================================================
@@ -2134,13 +2263,18 @@ EOF
 
     # 设置内核配置文件权限：仅允许 root 读写
     chmod 600 "$KERNEL_CONFIG_FILE" 2>/dev/null || true
+}
 
+# 应用内核参数到系统
+apply_kernel_params() {
+    # 从配置文件应用参数
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^# ]] && continue
         [[ -z "$key" ]] && continue
         sysctl -w "$key=$value" > /dev/null 2>&1 || true
     done < "$KERNEL_CONFIG_FILE"
 
+    # 更新 /etc/sysctl.conf
     if [[ -f /etc/sysctl.conf ]]; then
         sed -i '/# Z-Panel Pro 内核参数配置/,/# Z-Panel Pro 内核参数配置结束/d' /etc/sysctl.conf
 
@@ -2152,7 +2286,30 @@ EOF
         cat "$KERNEL_CONFIG_FILE" >> /etc/sysctl.conf
         echo "# Z-Panel Pro 内核参数配置结束" >> /etc/sysctl.conf
     fi
+}
 
+# 配置虚拟内存（重构后的主函数）
+# @param mode 策略模式
+configure_virtual_memory() {
+    local mode=${1:-"$STRATEGY_MODE"}
+
+    log info "配置虚拟内存策略 (策略: $mode)..."
+
+    read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< $(calculate_strategy "$mode")
+
+    # 计算动态 swappiness
+    local dynamic_swappiness
+    dynamic_swappiness=$(calculate_dynamic_swappiness "$swappiness" "$mode")
+
+    log info "建议 swappiness: $dynamic_swappiness"
+
+    # 保存内核配置
+    save_kernel_config "$dynamic_swappiness" "$dirty_ratio" "$min_free"
+
+    # 应用内核参数
+    apply_kernel_params
+
+    # 应用保护机制
     apply_io_fuse_protection "$dirty_ratio"
     apply_oom_protection
 
@@ -2163,9 +2320,9 @@ EOF
 # 动态调整模块
 # ============================================================================
 
-enable_dynamic_mode() {
-    log info "启用动态调整模式..."
-
+# 创建动态调整脚本
+# @return 0 表示成功，1 表示失败
+create_dynamic_adjust_script() {
     cat > "$INSTALL_DIR/dynamic-adjust.sh" <<'EOF'
 #!/bin/bash
 set -e
@@ -2255,57 +2412,121 @@ EOF
 
     # 设置动态调整脚本权限：仅允许 root 执行
     chmod 700 "$INSTALL_DIR/dynamic-adjust.sh" 2>/dev/null || true
+}
 
-    # 安全的 crontab 操作：使用临时文件
-    local cron_entry="*/5 * * * * $INSTALL_DIR/dynamic-adjust.sh"
+# 安全的 crontab 添加操作
+# @param cron_entry 要添加的 crontab 条目
+# @return 0 表示成功，1 表示失败
+safe_crontab_add() {
+    local cron_entry="$1"
     local cron_temp
     cron_temp=$(mktemp) || {
         log error "无法创建临时文件"
         return 1
     }
 
-    # 获取当前 crontab 并过滤
-    crontab -l 2>/dev/null | grep -v "dynamic-adjust.sh" > "$cron_temp" 2>/dev/null || true
+    # 设置临时文件权限
+    chmod 600 "$cron_temp" 2>/dev/null || true
 
-    # 检查是否已存在
-    if ! grep -q "dynamic-adjust.sh" "$cron_temp" 2>/dev/null; then
-        echo "$cron_entry" >> "$cron_temp"
+    # 获取当前 crontab 并过滤
+    if crontab -l 2>/dev/null > "$cron_temp"; then
+        # 检查是否已存在
+        if ! grep -q "$(echo "$cron_entry" | awk '{print $NF}')" "$cron_temp"; then
+            echo "$cron_entry" >> "$cron_temp"
+
+            # 验证临时文件内容
+            if grep -q "$(echo "$cron_entry" | awk '{print $NF}')" "$cron_temp"; then
+                # 安装新的 crontab
+                crontab "$cron_temp" 2>/dev/null || {
+                    log error "crontab 安装失败"
+                    rm -f "$cron_temp"
+                    return 1
+                }
+            else
+                log error "crontab 条目验证失败"
+                rm -f "$cron_temp"
+                return 1
+            fi
+        fi
+    else
+        # 没有现有crontab，创建新的
+        echo "$cron_entry" > "$cron_temp"
+
+        # 验证临时文件内容
+        if grep -q "$(echo "$cron_entry" | awk '{print $NF}')" "$cron_temp"; then
+            crontab "$cron_temp" 2>/dev/null || {
+                log error "crontab 设置失败"
+                rm -f "$cron_temp"
+                return 1
+            }
+        else
+            log error "crontab 条目验证失败"
+            rm -f "$cron_temp"
+            return 1
+        fi
     fi
 
-    # 安装新的 crontab
-    crontab "$cron_temp" 2>/dev/null || {
-        log error "crontab 安装失败"
-        rm -f "$cron_temp"
+    rm -f "$cron_temp"
+    return 0
+}
+
+# 安全的 crontab 删除操作
+# @param pattern 要删除的条目匹配模式
+# @return 0 表示成功，1 表示失败
+safe_crontab_remove() {
+    local pattern="$1"
+    local cron_temp
+    cron_temp=$(mktemp) || {
+        log error "无法创建临时文件"
         return 1
     }
 
+    # 设置临时文件权限
+    chmod 600 "$cron_temp" 2>/dev/null || true
+
+    # 获取当前 crontab 并过滤
+    if crontab -l 2>/dev/null > "$cron_temp"; then
+        # 过滤掉匹配的条目
+        grep -v "$pattern" "$cron_temp" > "${cron_temp}.filtered" 2>/dev/null || true
+
+        # 验证过滤后的内容
+        if [[ -f "${cron_temp}.filtered" ]]; then
+            crontab "${cron_temp}.filtered" 2>/dev/null || log warn "crontab 更新失败"
+            rm -f "${cron_temp}.filtered"
+        fi
+    fi
+
     rm -f "$cron_temp"
+    return 0
+}
+
+# 启用动态调整模式
+enable_dynamic_mode() {
+    log info "启用动态调整模式..."
+
+    # 创建动态调整脚本
+    create_dynamic_adjust_script || {
+        log error "创建动态调整脚本失败"
+        return 1
+    }
+
+    # 添加 crontab 条目
+    local cron_entry="*/5 * * * * $INSTALL_DIR/dynamic-adjust.sh"
+    safe_crontab_add "$cron_entry" || {
+        log error "添加 crontab 失败"
+        return 1
+    }
 
     DYNAMIC_MODE=true
     log info "动态调整模式已启用 (每 5 分钟检查)"
 }
 
+# 停用动态调整模式
 disable_dynamic_mode() {
     log info "停用动态调整模式..."
 
-    # 安全的 crontab 操作：使用临时文件
-    local cron_temp
-    cron_temp=$(mktemp) || {
-        log error "无法创建临时文件"
-        return 1
-    }
-
-    # 获取当前 crontab 并过滤掉 dynamic-adjust.sh
-    crontab -l 2>/dev/null | grep -v "dynamic-adjust.sh" > "$cron_temp" 2>/dev/null || true
-
-    # 安装新的 crontab
-    crontab "$cron_temp" 2>/dev/null || {
-        log error "crontab 更新失败"
-        rm -f "$cron_temp"
-        return 1
-    }
-
-    rm -f "$cron_temp"
+    # 删除 crontab 条目
+    safe_crontab_remove "dynamic-adjust.sh"
 
     DYNAMIC_MODE=false
     log info "动态调整模式已停用"
@@ -2324,8 +2545,8 @@ cleanup_monitor() {
 show_monitor() {
     clear
 
-    # 捕获多个信号进行优雅退出
-    trap 'cleanup_monitor; return 0' INT TERM QUIT
+    # 捕获多个信号进行优雅退出（包括 HUP 用于终端重连场景）
+    trap 'cleanup_monitor; return 0' INT TERM QUIT HUP
 
     # 上次显示的数据（用于检测变化）
     local last_mem_used=0
@@ -2390,8 +2611,23 @@ show_monitor() {
                 echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
 
                 local zram_status=$(get_zram_status)
-                local algo=$(echo "$zram_status" | grep -o '"algorithm":"[^"]*"' | cut -d'"' -f4)
-                local ratio=$(echo "$zram_status" | grep -o '"compression_ratio":"[^"]*"' | cut -d'"' -f4)
+                # 使用单次 awk 调用解析 JSON，提高性能
+                local algo_ratio=$(echo "$zram_status" | awk '{
+                    gsub(/[[:space:]]/, "", $0)
+                    gsub(/[{}"]/, "", $0)
+                    for (i = 1; i <= NF; i++) {
+                        if ($i ~ /^algorithm:/) {
+                            split($i, a, ":")
+                            algo = a[2]
+                        }
+                        if ($i ~ /^compression_ratio:/) {
+                            split($i, a, ":")
+                            ratio = a[2]
+                        }
+                    }
+                }')
+                local algo="${algo:-"unknown"}"
+                local ratio="${ratio:-"1.00"}"
                 [[ -z "$ratio" || "$ratio" == "0" ]] && ratio="1.00"
 
                 echo -e "${CYAN}│${NC}  算法: ${CYAN}${algo}${NC}  压缩比: ${YELLOW}${ratio}x${NC}                              ${CYAN}│${NC}"
@@ -2479,11 +2715,40 @@ show_status() {
         echo -e "${CYAN}│${NC}  状态: ${GREEN}运行中${NC}$(pad_left "" 45)${CYAN}│${NC}"
 
         local zram_status=$(get_zram_status)
-        local disk_size=$(echo "$zram_status" | grep -o '"disk_size":"[^"]*"' | cut -d'"' -f4)
-        local data_size=$(echo "$zram_status" | grep -o '"data_size":"[^"]*"' | cut -d'"' -f4)
-        local comp_size=$(echo "$zram_status" | grep -o '"comp_size":"[^"]*"' | cut -d'"' -f4)
-        local algo=$(echo "$zram_status" | grep -o '"algorithm":"[^"]*"' | cut -d'"' -f4)
-        local ratio=$(echo "$zram_status" | grep -o '"compression_ratio":"[^"]*"' | cut -d'"' -f4)
+        # 使用单次 awk 调用解析 JSON，提高性能
+        local disk_size data_size comp_size algo ratio
+        eval "$(echo "$zram_status" | awk '{
+            gsub(/[[:space:]]/, "", $0)
+            gsub(/[{}"]/, "", $0)
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^disk_size:/) {
+                    split($i, a, ":")
+                    print "disk_size=\"" a[2] "\""
+                }
+                if ($i ~ /^data_size:/) {
+                    split($i, a, ":")
+                    print "data_size=\"" a[2] "\""
+                }
+                if ($i ~ /^comp_size:/) {
+                    split($i, a, ":")
+                    print "comp_size=\"" a[2] "\""
+                }
+                if ($i ~ /^algorithm:/) {
+                    split($i, a, ":")
+                    print "algo=\"" a[2] "\""
+                }
+                if ($i ~ /^compression_ratio:/) {
+                    split($i, a, ":")
+                    print "ratio=\"" a[2] "\""
+                }
+            }
+        }')"
+        # 设置默认值
+        [[ -z "$disk_size" ]] && disk_size="0"
+        [[ -z "$data_size" ]] && data_size="0"
+        [[ -z "$comp_size" ]] && comp_size="0"
+        [[ -z "$algo" ]] && algo="unknown"
+        [[ -z "$ratio" || "$ratio" == "0" ]] && ratio="1.00"
 
         echo -e "${CYAN}│${NC}  算法: ${CYAN}${algo}${NC}  大小: ${CYAN}${disk_size}${NC}$(pad_left "" 30)${CYAN}│${NC}"
         echo -e "${CYAN}│${NC}  数据: ${CYAN}${data_size}${NC}  压缩: ${CYAN}${comp_size}${NC}$(pad_left "" 28)${CYAN}│${NC}"
@@ -3006,10 +3271,16 @@ main() {
     detect_system
 
     # 创建目录并设置安全权限
-    mkdir -p "$INSTALL_DIR"/{conf,logs,backup}
+    mkdir -p "$INSTALL_DIR"/{conf,logs,backup,lib}
+
+    # 设置严格的目录权限
+    chmod 750 "$INSTALL_DIR" 2>/dev/null || true
     chmod 700 "$INSTALL_DIR/conf" 2>/dev/null || true
-    chmod 755 "$INSTALL_DIR/logs" 2>/dev/null || true
+    chmod 750 "$INSTALL_DIR/logs" 2>/dev/null || true
     chmod 700 "$INSTALL_DIR/backup" 2>/dev/null || true
+    chmod 755 "$INSTALL_DIR/lib" 2>/dev/null || true
+
+    log info "目录权限已设置"
 
     # 创建全局快捷键 'z'
     install_global_shortcut
