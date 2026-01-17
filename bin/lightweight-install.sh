@@ -23,7 +23,14 @@ fi
 # ==============================================================================
 # 配置变量
 # ==============================================================================
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# 检测脚本目录（支持curl下载执行）
+if [[ -n "${BASH_SOURCE[0]}" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+else
+    # 从管道执行时，使用当前目录或临时目录
+    SCRIPT_DIR="$(pwd)"
+fi
+
 CONFIG_DIR="${SCRIPT_DIR}/etc/zpanel"
 DATA_DIR="/var/lib/zpanel"
 LOG_DIR="/tmp/zpanel/logs"
@@ -152,14 +159,16 @@ create_directories() {
 copy_files() {
     log_info "复制文件..."
 
-    # 复制核心库
+    # 复制核心库（如果存在）
     if [[ -d "${SCRIPT_DIR}/lib" ]]; then
         cp -r "${SCRIPT_DIR}/lib" "${SCRIPT_DIR}/lib.bak" 2>/dev/null || true
     fi
 
-    # 复制轻量级配置
+    # 复制轻量级配置（如果存在）
     if [[ -f "${CONFIG_DIR}/lightweight.conf" ]]; then
         cp "${CONFIG_DIR}/lightweight.conf" "${DATA_DIR}/zpanel.conf"
+    else
+        log_warning "未找到配置文件 ${CONFIG_DIR}/lightweight.conf，将使用默认配置"
     fi
 
     log_success "文件复制完成"
@@ -171,7 +180,7 @@ copy_files() {
 configure_lightweight() {
     log_info "配置轻量级模式..."
 
-    # 创建配置文件
+    # 创建配置文件（始终使用默认配置）
     cat > "${DATA_DIR}/zpanel.conf" <<'EOF'
 # Z-Panel Pro 轻量级模式配置
 ZPANEL_MODE="lightweight"
@@ -194,14 +203,36 @@ EOF
 create_startup_script() {
     log_info "创建启动脚本..."
 
-    cat > "${DATA_DIR}/start.sh" <<'EOF'
+    # 检测是否从仓库安装
+    local zpanel_sh=""
+    if [[ -f "${SCRIPT_DIR}/Z-Panel.sh" ]]; then
+        zpanel_sh="${SCRIPT_DIR}/Z-Panel.sh"
+    elif [[ -f "/opt/Z-Panel-Pro/Z-Panel.sh" ]]; then
+        zpanel_sh="/opt/Z-Panel-Pro/Z-Panel.sh"
+    else
+        log_warning "未找到Z-Panel.sh，请先克隆完整仓库"
+        zpanel_sh="/opt/Z-Panel-Pro/Z-Panel.sh"
+    fi
+
+    cat > "${DATA_DIR}/start.sh" <<EOF
 #!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export ZPANEL_CONFIG="${SCRIPT_DIR}/zpanel.conf"
+# Z-Panel Pro 启动脚本
+
+# 设置配置
+export ZPANEL_CONFIG="\${0%/*}/zpanel.conf"
 export ZPANEL_MODE="lightweight"
 
-# 启动TUI界面
-"${SCRIPT_DIR}/../Z-Panel.sh" tui
+# 尝试找到Z-Panel.sh
+if [[ -f "${zpanel_sh}" ]]; then
+    exec "${zpanel_sh}" tui
+elif [[ -f "/opt/Z-Panel-Pro/Z-Panel.sh" ]]; then
+    exec "/opt/Z-Panel-Pro/Z-Panel.sh" tui
+else
+    echo "错误: 未找到Z-Panel.sh"
+    echo "请先克隆完整仓库:"
+    echo "  git clone https://github.com/Big-flower-pig/Z-Panel-Pro.git /opt/Z-Panel-Pro"
+    exit 1
+fi
 EOF
 
     chmod +x "${DATA_DIR}/start.sh"
@@ -331,8 +362,14 @@ show_install_info() {
     echo "配置文件: ${DATA_DIR}/zpanel.conf"
     echo "日志目录: ${LOG_DIR}"
     echo ""
-    echo "启动命令:"
-    echo "  ${DATA_DIR}/start.sh"
+    echo "下一步操作:"
+    echo "  1. 克隆完整仓库:"
+    echo "     git clone https://github.com/Big-flower-pig/Z-Panel-Pro.git /opt/Z-Panel-Pro"
+    echo ""
+    echo "  2. 启动程序:"
+    echo "     ${DATA_DIR}/start.sh"
+    echo "     或"
+    echo "     /opt/Z-Panel-Pro/Z-Panel.sh"
     echo ""
     echo "服务管理:"
     echo "  systemctl start zpanel-lightweight"

@@ -95,13 +95,20 @@ curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/hea
 ### 轻量级模式安装（100MB内存）
 
 ```bash
-# 下载并运行轻量级安装脚本
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/bin/lightweight-install.sh | sudo bash
+# 方法1: 克隆完整仓库（推荐）
+git clone https://github.com/Big-flower-pig/Z-Panel-Pro.git /opt/Z-Panel-Pro
+cd /opt/Z-Panel-Pro
+./Z-Panel.sh
 
-# 或手动下载
+# 方法2: 下载并运行轻量级安装脚本（需要root权限）
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/bin/lightweight-install.sh | bash
+
+# 方法3: 手动下载安装脚本
 wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/bin/lightweight-install.sh
-sudo bash lightweight-install.sh
+bash lightweight-install.sh
 ```
+
+**注意**: 轻量级安装脚本会先安装基础依赖，然后需要克隆完整仓库才能运行完整功能。
 
 ### 标准模式安装
 
@@ -144,40 +151,46 @@ curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/hea
 ### 交互式菜单（轻量级/标准）
 
 ```bash
+# 如果是root用户，直接运行
+./Z-Panel.sh
+
+# 如果不是root用户，使用sudo
 sudo ./Z-Panel.sh
 ```
 
 ```bash
 # 启动实时监控面板
-sudo ./Z-Panel.sh -m
+./Z-Panel.sh -m
 
 # 显示系统状态
-sudo ./Z-Panel.sh -s
+./Z-Panel.sh -s
 
 # 设置策略模式
-sudo ./Z-Panel.sh --strategy balance
+./Z-Panel.sh --strategy balance
 
 # 创建系统备份
-sudo ./Z-Panel.sh -b
+./Z-Panel.sh -b
 
 # 启用开机自启
-sudo ./Z-Panel.sh -e
+./Z-Panel.sh -e
 
 # 启动智能优化（V8.0新功能）
-sudo ./Z-Panel.sh --smart-optimize
+./Z-Panel.sh --smart-optimize
 
 # 显示预测分析
-sudo ./Z-Panel.sh --predict
+./Z-Panel.sh --predict
 
 # 执行自适应调优
-sudo ./Z-Panel.sh --adaptive-tune
+./Z-Panel.sh --adaptive-tune
 ```
+
+**注意**: 所有命令都需要root权限。如果不是root用户，请在命令前添加`sudo`。
 
 ### 配置向导
 
 ```bash
 # 运行配置向导
-sudo ./Z-Panel.sh -c
+./Z-Panel.sh -c
 ```
 
 ---
