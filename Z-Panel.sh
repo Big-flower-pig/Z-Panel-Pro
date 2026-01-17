@@ -2274,27 +2274,52 @@ show_main_menu() {
     # 主要功能
     echo -e "${CYAN}│${WHITE}$(pad_left "🚀 主要功能" 57)${CYAN}│${NC}"
     echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}1.${NC} 一键优化[${YELLOW}当前: ${STRATEGY_MODE}${NC}]$(pad_left "" 19)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}2.${NC} 状态监控$(pad_left "" 40)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}3.${NC} 日志管理$(pad_left "" 40)${CYAN}│${NC}"
+
+    local item1="  ${GREEN}1.${NC} 一键优化[${YELLOW}当前: ${STRATEGY_MODE}${NC}]"
+    echo -e "${CYAN}│${NC}${item1}$(pad_right "" $((57 - $(string_display_width "$item1"))))${CYAN}│${NC}"
+
+    local item2="  ${GREEN}2.${NC} 状态监控"
+    echo -e "${CYAN}│${NC}${item2}$(pad_right "" $((57 - $(string_display_width "$item2"))))${CYAN}│${NC}"
+
+    local item3="  ${GREEN}3.${NC} 日志管理"
+    echo -e "${CYAN}│${NC}${item3}$(pad_right "" $((57 - $(string_display_width "$item3"))))${CYAN}│${NC}"
+
     echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
 
     # 高级功能
     echo -e "${CYAN}│${WHITE}$(pad_left "⚙️  高级功能" 57)${CYAN}│${NC}"
     echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}4.${NC} 切换优化模式[${YELLOW}保守/平衡/激进${NC}]${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}5.${NC} 配置 ZRAM$(pad_left "" 40)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}6.${NC} 配置虚拟内存$(pad_left "" 37)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}7.${NC} 动态调整模式$(pad_left "" 36)${CYAN}│${NC}"
+
+    local item4="  ${GREEN}4.${NC} 切换优化模式[${YELLOW}保守/平衡/激进${NC}]"
+    echo -e "${CYAN}│${NC}${item4}$(pad_right "" $((57 - $(string_display_width "$item4"))))${CYAN}│${NC}"
+
+    local item5="  ${GREEN}5.${NC} 配置 ZRAM"
+    echo -e "${CYAN}│${NC}${item5}$(pad_right "" $((57 - $(string_display_width "$item5"))))${CYAN}│${NC}"
+
+    local item6="  ${GREEN}6.${NC} 配置虚拟内存"
+    echo -e "${CYAN}│${NC}${item6}$(pad_right "" $((57 - $(string_display_width "$item6"))))${CYAN}│${NC}"
+
+    local item7="  ${GREEN}7.${NC} 动态调整模式"
+    echo -e "${CYAN}│${NC}${item7}$(pad_right "" $((57 - $(string_display_width "$item7"))))${CYAN}│${NC}"
+
     echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
 
     # 系统管理
     echo -e "${CYAN}│${WHITE}$(pad_left "🛠️  系统管理" 57)${CYAN}│${NC}"
     echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}8.${NC} 查看系统状态$(pad_left "" 37)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}9.${NC} 停用 ZRAM$(pad_left "" 40)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}10.${NC} 还原备份$(pad_left "" 39)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}0.${NC} 退出程序$(pad_left "" 41)${CYAN}│${NC}"
+
+    local item8="  ${GREEN}8.${NC} 查看系统状态"
+    echo -e "${CYAN}│${NC}${item8}$(pad_right "" $((57 - $(string_display_width "$item8"))))${CYAN}│${NC}"
+
+    local item9="  ${GREEN}9.${NC} 停用 ZRAM"
+    echo -e "${CYAN}│${NC}${item9}$(pad_right "" $((57 - $(string_display_width "$item9"))))${CYAN}│${NC}"
+
+    local item10="  ${GREEN}10.${NC} 还原备份"
+    echo -e "${CYAN}│${NC}${item10}$(pad_right "" $((57 - $(string_display_width "$item10"))))${CYAN}│${NC}"
+
+    local item0="  ${GREEN}0.${NC} 退出程序"
+    echo -e "${CYAN}│${NC}${item0}$(pad_right "" $((57 - $(string_display_width "$item0"))))${CYAN}│${NC}"
+
     echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
 
     # 状态栏
