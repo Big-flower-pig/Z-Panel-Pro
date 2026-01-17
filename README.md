@@ -51,84 +51,47 @@ Z-Panel Pro 是一款功能强大的企业级 Linux 内存优化工具，通过�
 - 主脚本：https://github.com/Big-flower-pig/Z-Panel-Pro/blob/main/Z-Panel.sh
 - 完整项目：https://github.com/Big-flower-pig/Z-Panel-Pro
 
-### 方法一：手动安装（推荐）
+### 方式一：使用 curl 下载（推荐）
 
 ```bash
-# 克隆仓库
-git clone https://github.com/Big-flower-pig/Z-Panel-Pro.git
-cd Z-Panel-Pro
-
-# 复制到安装目录
-sudo cp -r . /opt/Z-Panel-Pro
-
-# 设置执行权限
-sudo chmod +x /opt/Z-Panel-Pro/Z-Panel.sh
-
-# 创建软链接（可选）
-sudo ln -sf /opt/Z-Panel-Pro/Z-Panel.sh /usr/local/bin/zpanel
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh -o Z-Panel.sh && \
+mkdir -p lib && \
+cd lib && \
+for file in core.sh error_handler.sh utils.sh lock.sh system.sh data_collector.sh ui.sh strategy.sh zram.sh kernel.sh swap.sh backup.sh monitor.sh menu.sh; do \
+  curl -fsSL "https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/${file}" -o "${file}"; \
+done && \
+cd .. && \
+chmod +x Z-Panel.sh && \
+./Z-Panel.sh
 ```
 
-### 方法二：直接下载主脚本（快速体验）
+### 方式二：使用 wget 下载
 
 ```bash
-# 下载主脚本（使用 wget）
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh -O Z-Panel.sh
-
-# 或使用 curl
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh -o Z-Panel.sh
-
-# 下载依赖库文件
-mkdir -p lib
-cd lib
-
-# 使用 wget 下载
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/core.sh
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/error_handler.sh
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/utils.sh
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/lock.sh
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/system.sh
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/data_collector.sh
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/ui.sh
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/strategy.sh
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/zram.sh
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/kernel.sh
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/swap.sh
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/backup.sh
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/monitor.sh
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/menu.sh
-
-# 或使用 curl 下载
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/core.sh -o core.sh
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/error_handler.sh -o error_handler.sh
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/utils.sh -o utils.sh
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/lock.sh -o lock.sh
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/system.sh -o system.sh
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/data_collector.sh -o data_collector.sh
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/ui.sh -o ui.sh
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/strategy.sh -o strategy.sh
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/zram.sh -o zram.sh
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/kernel.sh -o kernel.sh
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/swap.sh -o swap.sh
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/backup.sh -o backup.sh
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/monitor.sh -o monitor.sh
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/menu.sh -o menu.sh
-cd ..
-
-# 设置执行权限
-chmod +x Z-Panel.sh
-
-# 运行程序
-sudo ./Z-Panel.sh
+wget -q https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh && \
+mkdir -p lib && \
+cd lib && \
+for file in core.sh error_handler.sh utils.sh lock.sh system.sh data_collector.sh ui.sh strategy.sh zram.sh kernel.sh swap.sh backup.sh monitor.sh menu.sh; do \
+  wget -q "https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/${file}"; \
+done && \
+cd .. && \
+chmod +x Z-Panel.sh && \
+./Z-Panel.sh
 ```
 
-### 方法三：使用包管理器
+**故障排除**：
+
+如果遇到 "cannot execute: required file not found" 错误，请尝试以下方法：
 
 ```bash
-# Ubuntu/Debian
-sudo dpkg -i zpanel-pro_7.1.0_amd64.deb
+# 方法1：使用 dos2unix 转换换行符
+dos2unix Z-Panel.sh
 
-# CentOS/RHEL
-sudo rpm -i zpanel-pro-7.1.0-1.x86_64.rpm
+# 方法2：使用 sed 转换换行符
+sed -i 's/\r$//' Z-Panel.sh
+
+# 方法3：使用 bash 直接执行（无需下载）
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh | bash
 ```
 
 ---
