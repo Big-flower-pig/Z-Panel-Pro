@@ -1,9 +1,7 @@
 #!/bin/bash
 # ==============================================================================
-# Z-Panel Pro - 备份与回滚模块
-# ==============================================================================
-# @description    系统配置备份与恢复
-# @version       7.1.0-Enterprise
+# Z-Panel Pro - 备份与回滚模�?# ==============================================================================
+# @description    系统配置备份与恢�?# @version       7.1.0-Enterprise
 # @author        Z-Panel Team
 # ==============================================================================
 
@@ -39,15 +37,14 @@ create_backup() {
             local filename
             filename=$(basename "${file}")
 
-            # 验证文件名
-            if ! validate_filename "${filename}"; then
-                log_warn "跳过不安全的文件名: ${filename}"
+            # 验证文件�?            if ! validate_filename "${filename}"; then
+                log_warn "跳过不安全的文件�? ${filename}"
                 continue
             fi
 
             if cp "${file}" "${backup_path}/" 2>/dev/null; then
                 ((backed_up++)) || true
-                log_info "已备份: ${file}"
+                log_info "已备�? ${file}"
             else
                 log_warn "备份失败: ${file}"
             fi
@@ -69,7 +66,7 @@ files_backed_up=${backed_up}
 EOF
 
     if save_config_file "${info_file}" "${content}"; then
-        log_info "备份完成: ${backup_path} (共 ${backed_up} 个文件)"
+        log_info "备份完成: ${backup_path} (�?${backed_up} 个文�?"
         echo "${backup_path}"
         return 0
     else
@@ -81,14 +78,13 @@ EOF
 # ==============================================================================
 # 还原备份
 # @param backup_path: 备份目录路径
-# @return: 0为成功，1为失败
-# ==============================================================================
+# @return: 0为成功，1为失�?# ==============================================================================
 restore_backup() {
     local backup_path="$1"
 
     # 验证备份路径
     if [[ ! -d "${backup_path}" ]]; then
-        handle_error "RESTORE" "备份目录不存在: ${backup_path}"
+        handle_error "RESTORE" "备份目录不存�? ${backup_path}"
         return 1
     fi
 
@@ -114,19 +110,17 @@ restore_backup() {
                 continue
             fi
 
-            # 验证文件名
-            if ! validate_filename "${filename}"; then
-                log_warn "跳过不安全的文件名: ${filename}"
+            # 验证文件�?            if ! validate_filename "${filename}"; then
+                log_warn "跳过不安全的文件�? ${filename}"
                 continue
             fi
 
             local target="/etc/${filename}"
 
-            # 备份原文件
-            if [[ -f "${target}" ]]; then
+            # 备份原文�?            if [[ -f "${target}" ]]; then
                 local backup_target="${target}.bak.$(date +%Y%m%d_%H%M%S)"
                 if ! cp "${target}" "${backup_target}" 2>/dev/null; then
-                    log_warn "无法备份原文件: ${target}"
+                    log_warn "无法备份原文�? ${target}"
                 else
                     log_info "原文件已备份: ${backup_target}"
                 fi
@@ -135,7 +129,7 @@ restore_backup() {
             # 还原文件
             if cp "${file}" "${target}" 2>/dev/null; then
                 ((restored++)) || true
-                log_info "已还原: ${filename}"
+                log_info "已还�? ${filename}"
             else
                 ((failed++)) || true
                 log_error "还原失败: ${filename}"
@@ -143,7 +137,7 @@ restore_backup() {
         fi
     done
 
-    log_info "还原完成: 成功 ${restored} 个文件，失败 ${failed} 个文件"
+    log_info "还原完成: 成功 ${restored} 个文件，失败 ${failed} 个文�?
 
     # 应用内核参数
     if [[ -f /etc/sysctl.conf ]]; then
@@ -155,15 +149,14 @@ restore_backup() {
 }
 
 # ==============================================================================
-# 列出所有备份
-# @return: 备份列表
+# 列出所有备�?# @return: 备份列表
 # ==============================================================================
 list_backups() {
     echo "=== 可用备份列表 ==="
     echo ""
 
     if [[ ! -d "${BACKUP_DIR}" ]]; then
-        echo "备份目录不存在: ${BACKUP_DIR}"
+        echo "备份目录不存�? ${BACKUP_DIR}"
         return 1
     fi
 
@@ -213,14 +206,13 @@ list_backups() {
 # ==============================================================================
 # 删除备份
 # @param backup_path: 备份目录路径
-# @return: 0为成功，1为失败
-# ==============================================================================
+# @return: 0为成功，1为失�?# ==============================================================================
 delete_backup() {
     local backup_path="$1"
 
     # 验证备份路径
     if [[ ! -d "${backup_path}" ]]; then
-        handle_error "BACKUP_DELETE" "备份目录不存在: ${backup_path}"
+        handle_error "BACKUP_DELETE" "备份目录不存�? ${backup_path}"
         return 1
     fi
 
@@ -231,7 +223,7 @@ delete_backup() {
 
     # 删除备份
     if rm -rf "${backup_path}" 2>/dev/null; then
-        log_info "备份已删除: ${backup_path}"
+        log_info "备份已删�? ${backup_path}"
         return 0
     else
         handle_error "BACKUP_DELETE" "删除备份失败"
@@ -241,13 +233,11 @@ delete_backup() {
 
 # ==============================================================================
 # 清理过期备份
-# @param retention_days: 保留天数（默认30）
-# @return: 0为成功
-# ==============================================================================
+# @param retention_days: 保留天数（默�?0�?# @return: 0为成�?# ==============================================================================
 clean_old_backups() {
     local retention_days="${1:-30}"
 
-    log_info "清理过期备份 (保留 ${retention_days} 天)..."
+    log_info "清理过期备份 (保留 ${retention_days} �?..."
 
     if [[ ! -d "${BACKUP_DIR}" ]]; then
         return 0
@@ -277,14 +267,14 @@ clean_old_backups() {
         if [[ ${backup_timestamp} -gt 0 ]] && [[ ${age} -gt ${retention_seconds} ]]; then
             if rm -rf "${backup_dir}" 2>/dev/null; then
                 ((deleted++)) || true
-                log_info "已删除过期备份: ${backup_name}"
+                log_info "已删除过期备�? ${backup_name}"
             else
                 log_warn "删除失败: ${backup_name}"
             fi
         fi
     done < <(find "${BACKUP_DIR}" -maxdepth 1 -type d -name "backup_*" -print0 2>/dev/null)
 
-    log_info "清理完成: 已删除 ${deleted} 个过期备份"
+    log_info "清理完成: 已删�?${deleted} 个过期备�?
     return 0
 }
 
@@ -298,7 +288,7 @@ get_backup_info() {
     local info_file="${backup_path}/info.txt"
 
     if [[ ! -f "${info_file}" ]]; then
-        echo "备份信息文件不存在"
+        echo "备份信息文件不存�?
         return 1
     fi
 

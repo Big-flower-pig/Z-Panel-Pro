@@ -2,8 +2,7 @@
 # ==============================================================================
 # Z-Panel Pro - 监控面板模块
 # ==============================================================================
-# @description    系统监控与状态显示
-# @version       7.1.0-Enterprise
+# @description    系统监控与状态显�?# @version       7.1.0-Enterprise
 # @author        Z-Panel Team
 # ==============================================================================
 
@@ -12,12 +11,11 @@
 # ==============================================================================
 cleanup_monitor() {
     clear_cache
-    log_debug "监控面板已退出"
+    log_debug "监控面板已退�?
 }
 
 # ==============================================================================
-# 显示内存状态
-# ==============================================================================
+# 显示内存状�?# ==============================================================================
 show_memory_status() {
     ui_draw_section "[RAM] 使用情况"
 
@@ -30,20 +28,18 @@ show_memory_status() {
 }
 
 # ==============================================================================
-# 显示ZRAM状态
-# ==============================================================================
+# 显示ZRAM状�?# ==============================================================================
 show_zram_status() {
-    ui_draw_section "[ZRAM] 状态"
+    ui_draw_section "[ZRAM] 状�?
 
     if ! is_zram_enabled; then
-        ui_draw_row " 状态: ${COLOR_RED}未启用${COLOR_NC}"
+        ui_draw_row " 状�? ${COLOR_RED}未启�?{COLOR_NC}"
         return
     fi
 
-    ui_draw_row " 状态: ${COLOR_GREEN}运行中${COLOR_NC}"
+    ui_draw_row " 状�? ${COLOR_GREEN}运行�?{COLOR_NC}"
 
-    # 解析ZRAM状态
-    local zram_status
+    # 解析ZRAM状�?    local zram_status
     zram_status=$(get_zram_status)
 
     local algo="unknown"
@@ -56,9 +52,9 @@ show_zram_status() {
 
     [[ -z "${ratio}" ]] || [[ "${ratio}" == "0" ]] && ratio="1.00"
 
-    ui_draw_row " 算法: ${COLOR_CYAN}${algo}${COLOR_NC}  压缩比: ${COLOR_YELLOW}${ratio}x${COLOR_NC}"
+    ui_draw_row " 算法: ${COLOR_CYAN}${algo}${COLOR_NC}  压缩�? ${COLOR_YELLOW}${ratio}x${COLOR_NC}"
 
-    ui_draw_row " ZRAM 压缩比:"
+    ui_draw_row " ZRAM 压缩�?"
     echo -ne "  "
     ui_draw_compression_chart "${ratio}" 46
 
@@ -69,15 +65,14 @@ show_zram_status() {
 }
 
 # ==============================================================================
-# 显示Swap状态
-# ==============================================================================
+# 显示Swap状�?# ==============================================================================
 show_swap_status() {
     ui_draw_section "[SWAP] 负载"
 
     read -r swap_total swap_used <<< "$(get_swap_info true)"
 
     if [[ ${swap_total} -eq 0 ]]; then
-        ui_draw_row " 状态: ${COLOR_RED}未启用${COLOR_NC}"
+        ui_draw_row " 状�? ${COLOR_RED}未启�?{COLOR_NC}"
     else
         echo -ne "  "
         ui_draw_progress_bar "${swap_used}" "${swap_total}" 46 ""
@@ -85,8 +80,7 @@ show_swap_status() {
 }
 
 # ==============================================================================
-# 显示内核参数状态
-# ==============================================================================
+# 显示内核参数状�?# ==============================================================================
 show_kernel_status() {
     ui_draw_section "[KERNEL] 参数"
 
@@ -99,20 +93,19 @@ show_kernel_status() {
 }
 
 # ==============================================================================
-# 显示保护机制状态
-# ==============================================================================
+# 显示保护机制状�?# ==============================================================================
 show_protection_status() {
     ui_draw_section "[PROTECTION] 保护机制"
-    ui_draw_row "  ${COLOR_GREEN}[OK]${COLOR_NC} I/O 熔断: ${COLOR_GREEN}已启用${COLOR_NC}"
-    ui_draw_row "  ${COLOR_GREEN}[OK]${COLOR_NC} OOM 保护: ${COLOR_GREEN}已启用${COLOR_NC}"
-    ui_draw_row "  ${COLOR_GREEN}[OK]${COLOR_NC} 物理内存熔断: ${COLOR_GREEN}已启用${COLOR_NC}"
+    ui_draw_row "  ${COLOR_GREEN}[OK]${COLOR_NC} I/O 熔断: ${COLOR_GREEN}已启�?{COLOR_NC}"
+    ui_draw_row "  ${COLOR_GREEN}[OK]${COLOR_NC} OOM 保护: ${COLOR_GREEN}已启�?{COLOR_NC}"
+    ui_draw_row "  ${COLOR_GREEN}[OK]${COLOR_NC} 物理内存熔断: ${COLOR_GREEN}已启�?{COLOR_NC}"
 }
 
 # ==============================================================================
 # 显示系统信息
 # ==============================================================================
 show_system_info() {
-    ui_draw_row " 发行版: ${COLOR_GREEN}${SYSTEM_INFO[distro]} ${SYSTEM_INFO[version]}${COLOR_NC}"
+    ui_draw_row " 发行�? ${COLOR_GREEN}${SYSTEM_INFO[distro]} ${SYSTEM_INFO[version]}${COLOR_NC}"
     ui_draw_row " 内存: ${COLOR_GREEN}${SYSTEM_INFO[total_memory_mb]}MB${COLOR_NC} CPU: ${COLOR_GREEN}${SYSTEM_INFO[cpu_cores]}核心${COLOR_NC} 策略: ${COLOR_YELLOW}${STRATEGY_MODE}${COLOR_NC}"
 }
 
@@ -139,8 +132,7 @@ show_monitor() {
         local swappiness
         swappiness=$(get_swappiness)
 
-        # 检查数据变化
-        local data_changed=false
+        # 检查数据变�?        local data_changed=false
         if [[ ${force_refresh} == true ]] || \
            [[ ${mem_used} -ne ${last_mem_used} ]] || \
            [[ ${zram_used} -ne ${last_zram_used} ]] || \
@@ -174,11 +166,10 @@ show_monitor() {
 
             ui_draw_bottom
             echo ""
-            echo -e "${COLOR_YELLOW}[INFO] 按 Ctrl+C 返回主菜单${COLOR_NC}"
+            echo -e "${COLOR_YELLOW}[INFO] �?Ctrl+C 返回主菜�?{COLOR_NC}"
             echo ""
 
-            # 更新最后值
-            last_mem_used=${mem_used}
+            # 更新最后�?            last_mem_used=${mem_used}
             last_zram_used=${zram_used}
             last_swap_used=${swap_used}
             last_swappiness=${swappiness}
@@ -189,27 +180,24 @@ show_monitor() {
 }
 
 # ==============================================================================
-# 显示系统状态
-# ==============================================================================
+# 显示系统状�?# ==============================================================================
 show_status() {
     ui_clear
 
-    ui_draw_header "Z-Panel Pro 系统状态 v${VERSION}"
+    ui_draw_header "Z-Panel Pro 系统状�?v${VERSION}"
 
     # 系统信息
     ui_draw_section "[SYSTEM] 信息"
     show_system_info
 
-    # ZRAM状态
-    show_zram_status
+    # ZRAM状�?    show_zram_status
 
-    # Swap状态
-    ui_draw_section "[SWAP] 状态"
+    # Swap状�?    ui_draw_section "[SWAP] 状�?
 
     read -r swap_total swap_used <<< "$(get_swap_info false)"
 
     if [[ ${swap_total} -eq 0 ]]; then
-        ui_draw_row " 状态: ${COLOR_RED}未启用${COLOR_NC}"
+        ui_draw_row " 状�? ${COLOR_RED}未启�?{COLOR_NC}"
     else
         ui_draw_row " 总量: ${COLOR_CYAN}${swap_total}MB${COLOR_NC} 已用: ${COLOR_CYAN}${swap_used}MB${COLOR_NC}"
         ui_draw_row " Swap 负载:"

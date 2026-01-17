@@ -16,16 +16,14 @@ declare -gr LOG_LEVEL_WARN=2
 declare -gr LOG_LEVEL_ERROR=3
 
 # ==============================================================================
-# 全局错误状态
-# ==============================================================================
+# 全局错误状�?# ==============================================================================
 declare -g CURRENT_LOG_LEVEL=${LOG_LEVEL_DEBUG}
 declare -g ERROR_COUNT=0
 declare -g LAST_ERROR_CONTEXT=""
 declare -g LAST_ERROR_MESSAGE=""
 
 # ==============================================================================
-# 错误上下文追踪
-# ==============================================================================
+# 错误上下文追�?# ==============================================================================
 declare -gA ERROR_CONTEXT=()
 
 # ==============================================================================
@@ -66,8 +64,7 @@ log_message() {
             ;;
     esac
 
-    # 控制台输出
-    if [[ ${level} -ge ${CURRENT_LOG_LEVEL} ]]; then
+    # 控制台输�?    if [[ ${level} -ge ${CURRENT_LOG_LEVEL} ]]; then
         echo -e "${color}${timestamp}${prefix}${COLOR_NC} ${message}"
     fi
 
@@ -99,8 +96,7 @@ handle_error() {
     # 更新错误计数
     ((ERROR_COUNT++)) || true
 
-    # 记录错误上下文
-    ERROR_CONTEXT["${context}"]="${message}"
+    # 记录错误上下�?    ERROR_CONTEXT["${context}"]="${message}"
 
     # 记录日志
     log_error "[${context}] ${message}"
@@ -111,7 +107,7 @@ handle_error() {
             return 1
             ;;
         exit)
-            log_error "严重错误，退出程序 (代码: ${exit_code})"
+            log_error "严重错误，退出程�?(代码: ${exit_code})"
             exit ${exit_code}
             ;;
         abort)
@@ -119,7 +115,7 @@ handle_error() {
             return 2
             ;;
         retry)
-            log_warn "操作将重试"
+            log_warn "操作将重�?
             return 3
             ;;
         warn_only)
@@ -127,7 +123,7 @@ handle_error() {
             return 0
             ;;
         *)
-            log_error "未知的错误处理动作: ${action}"
+            log_error "未知的错误处理动�? ${action}"
             return 1
             ;;
     esac
@@ -162,20 +158,18 @@ execute_with_retry() {
         ((attempt++)) || true
     done
 
-    log_error "操作在 ${max_attempts} 次尝试后仍然失败"
+    log_error "操作�?${max_attempts} 次尝试后仍然失败"
     return 1
 }
 
 # ==============================================================================
-# 获取最后错误信息
-# ==============================================================================
+# 获取最后错误信�?# ==============================================================================
 get_last_error() {
     echo "[${LAST_ERROR_CONTEXT}] ${LAST_ERROR_MESSAGE}"
 }
 
 # ==============================================================================
-# 重置错误状态
-# ==============================================================================
+# 重置错误状�?# ==============================================================================
 reset_error_state() {
     ERROR_COUNT=0
     LAST_ERROR_CONTEXT=""
@@ -211,7 +205,7 @@ assert_not_empty() {
 
 assert_file_exists() {
     local file="$1"
-    local message="${2:-文件不存在: ${file}}"
+    local message="${2:-文件不存�? ${file}}"
 
     if [[ ! -f "${file}" ]]; then
         handle_error "ASSERTION" "${message}" "warn_only"
@@ -222,7 +216,7 @@ assert_file_exists() {
 
 assert_command_exists() {
     local cmd="$1"
-    local message="${2:-命令不存在: ${cmd}}"
+    local message="${2:-命令不存�? ${cmd}}"
 
     if ! command -v "${cmd}" &> /dev/null; then
         handle_error "ASSERTION" "${message}" "warn_only"
@@ -232,8 +226,7 @@ assert_command_exists() {
 }
 
 # ==============================================================================
-# 初始化日志目录
-# ==============================================================================
+# 初始化日志目�?# ==============================================================================
 init_logging() {
     mkdir -p "${LOG_DIR}" 2>/dev/null || {
         echo "无法创建日志目录: ${LOG_DIR}" >&2
@@ -263,7 +256,7 @@ set_log_level() {
             CURRENT_LOG_LEVEL=${LOG_LEVEL_ERROR}
             ;;
         *)
-            log_warn "无效的日志级别: ${level}, 使用默认值 INFO"
+            log_warn "无效的日志级�? ${level}, 使用默认�?INFO"
             CURRENT_LOG_LEVEL=${LOG_LEVEL_INFO}
             ;;
     esac

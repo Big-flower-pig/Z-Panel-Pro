@@ -2,8 +2,7 @@
 # ==============================================================================
 # Z-Panel Pro - 数据采集模块
 # ==============================================================================
-# @description    系统数据采集与缓存管理
-# @version       7.1.0-Enterprise
+# @description    系统数据采集与缓存管�?# @version       7.1.0-Enterprise
 # @author        Z-Panel Team
 # ==============================================================================
 
@@ -25,14 +24,13 @@ update_cache() {
     local cache_age=$((current_time - CACHE_LAST_UPDATE))
 
     if [[ ${cache_age} -lt ${CACHE_TTL} ]]; then
-        log_debug "缓存未过期 (年龄: ${cache_age}s, TTL: ${CACHE_TTL}s)"
+        log_debug "缓存未过�?(年龄: ${cache_age}s, TTL: ${CACHE_TTL}s)"
         return 0
     fi
 
     log_debug "更新缓存..."
 
-    # 一次性获取内存信息（减少系统调用）
-    local mem_info
+    # 一次性获取内存信息（减少系统调用�?    local mem_info
     mem_info=$(free -m | awk '/^Mem:/ {print $2, $3, $7, $6}')
     read -r CACHE_DATA[mem_total] CACHE_DATA[mem_used] CACHE_DATA[mem_avail] CACHE_DATA[buff_cache] <<< "${mem_info}"
 
@@ -41,22 +39,20 @@ update_cache() {
     swap_info=$(free -m | awk '/Swap:/ {print $2, $3}')
     read -r CACHE_DATA[swap_total] CACHE_DATA[swap_used] <<< "${swap_info}"
 
-    # 获取ZRAM状态缓存
-    CACHE_DATA[zram_enabled]=$(is_zram_enabled && echo "1" || echo "0")
+    # 获取ZRAM状态缓�?    CACHE_DATA[zram_enabled]=$(is_zram_enabled && echo "1" || echo "0")
 
     CACHE_LAST_UPDATE=${current_time}
-    log_debug "缓存已更新"
+    log_debug "缓存已更�?
 }
 
 # 清除缓存
 clear_cache() {
     CACHE_DATA=()
     CACHE_LAST_UPDATE=0
-    log_debug "缓存已清除"
+    log_debug "缓存已清�?
 }
 
-# 获取缓存值
-get_cache_value() {
+# 获取缓存�?get_cache_value() {
     local key="$1"
     echo "${CACHE_DATA[$key]:-}"
 }
@@ -66,8 +62,7 @@ get_cache_value() {
 # ==============================================================================
 
 # 获取内存信息
-# @param use_cache: 是否使用缓存（true/false，默认true）
-# @return: "total used avail buff_cache"
+# @param use_cache: 是否使用缓存（true/false，默认true�?# @return: "total used avail buff_cache"
 get_memory_info() {
     local use_cache="${1:-true}"
 
@@ -79,9 +74,7 @@ get_memory_info() {
     fi
 }
 
-# 获取内存使用率
-# @param use_cache: 是否使用缓存（true/false，默认true）
-# @return: 使用率百分比
+# 获取内存使用�?# @param use_cache: 是否使用缓存（true/false，默认true�?# @return: 使用率百分比
 get_memory_usage() {
     local use_cache="${1:-true}"
     local mem_total mem_used
@@ -95,8 +88,7 @@ get_memory_usage() {
 # ==============================================================================
 
 # 获取Swap信息
-# @param use_cache: 是否使用缓存（true/false，默认true）
-# @return: "total used"
+# @param use_cache: 是否使用缓存（true/false，默认true�?# @return: "total used"
 get_swap_info() {
     local use_cache="${1:-true}"
 
@@ -108,9 +100,7 @@ get_swap_info() {
     fi
 }
 
-# 获取Swap使用率
-# @param use_cache: 是否使用缓存（true/false，默认true）
-# @return: 使用率百分比
+# 获取Swap使用�?# @param use_cache: 是否使用缓存（true/false，默认true�?# @return: 使用率百分比
 get_swap_usage() {
     local use_cache="${1:-true}"
     local swap_total swap_used
@@ -145,8 +135,7 @@ get_zram_usage() {
         return
     fi
 
-    # 使用统一的单位转换函数
-    local zram_total zram_used
+    # 使用统一的单位转换函�?    local zram_total zram_used
     zram_total=$(echo "${zram_info}" | awk '{print $1}')
     zram_used=$(echo "${zram_info}" | awk '{print $2}')
 
@@ -159,8 +148,7 @@ get_zram_usage() {
     echo "${zram_total} ${zram_used}"
 }
 
-# 获取ZRAM使用率
-# @return: 使用率百分比
+# 获取ZRAM使用�?# @return: 使用率百分比
 get_zram_usage_percent() {
     local zram_total zram_used
     read -r zram_total zram_used <<< "$(get_zram_usage)"
@@ -168,9 +156,7 @@ get_zram_usage_percent() {
     calculate_percentage "${zram_used}" "${zram_total}"
 }
 
-# 获取ZRAM状态（JSON格式）
-# @return: JSON字符串
-get_zram_status() {
+# 获取ZRAM状态（JSON格式�?# @return: JSON字符�?get_zram_status() {
     if ! check_command zramctl; then
         echo '{"enabled": false}'
         return
@@ -226,8 +212,7 @@ get_zram_algorithm() {
     fi
 }
 
-# 获取ZRAM压缩比
-# @return: 压缩比（浮点数）
+# 获取ZRAM压缩�?# @return: 压缩比（浮点数）
 get_zram_compression_ratio() {
     local zram_status
     zram_status=$(get_zram_status)
@@ -243,17 +228,13 @@ get_zram_compression_ratio() {
 # CPU信息采集
 # ==============================================================================
 
-# 获取CPU核心数
-# @return: 核心数
-get_cpu_cores() {
+# 获取CPU核心�?# @return: 核心�?get_cpu_cores() {
     nproc 2>/dev/null || echo "1"
 }
 
-# 获取CPU使用率
-# @return: 使用率百分比
+# 获取CPU使用�?# @return: 使用率百分比
 get_cpu_usage() {
-    # 获取CPU使用率（简化版）
-    local cpu_usage
+    # 获取CPU使用率（简化版�?    local cpu_usage
     cpu_usage=$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1}')
 
     echo "${cpu_usage:-0}"
@@ -264,8 +245,7 @@ get_cpu_usage() {
 # ==============================================================================
 
 # 获取磁盘使用情况
-# @param path: 路径（默认/）
-# @return: "total_mb used_mb avail_mb usage_percent"
+# @param path: 路径（默�?�?# @return: "total_mb used_mb avail_mb usage_percent"
 get_disk_info() {
     local path="${1:-/}"
     df -m "${path}" | awk 'NR==2 {print $2, $3, $4, $5}'
@@ -276,16 +256,12 @@ get_disk_info() {
 # ==============================================================================
 
 # 获取内核参数
-# @param param: 参数名
-# @return: 参数值
-get_kernel_param() {
+# @param param: 参数�?# @return: 参数�?get_kernel_param() {
     local param="$1"
     sysctl -n "${param}" 2>/dev/null || echo ""
 }
 
-# 获取swappiness值
-# @return: swappiness值
-get_swappiness() {
+# 获取swappiness�?# @return: swappiness�?get_swappiness() {
     get_kernel_param "vm.swappiness"
 }
 

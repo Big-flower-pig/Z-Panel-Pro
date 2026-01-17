@@ -3,8 +3,7 @@
 # Z-Panel Pro - strategy.sh 单元测试
 # ==============================================================================
 
-# 导入被测试模块
-source "${SCRIPT_DIR}/../lib/strategy.sh"
+# 导入被测试模�?source "${SCRIPT_DIR}/../lib/strategy.sh"
 source "${SCRIPT_DIR}/../lib/core.sh"
 
 # 测试配置目录
@@ -22,13 +21,11 @@ STRATEGY_CONFIG_FILE="${CONFIG_DIR}/strategy.conf"
 test_validate_strategy_mode() {
     test_suite_start "validate_strategy_mode"
 
-    # 测试有效的策略模式
-    assert_true "$(validate_strategy_mode "conservative")" "Valid: conservative"
+    # 测试有效的策略模�?    assert_true "$(validate_strategy_mode "conservative")" "Valid: conservative"
     assert_true "$(validate_strategy_mode "balance")" "Valid: balance"
     assert_true "$(validate_strategy_mode "aggressive")" "Valid: aggressive"
 
-    # 测试无效的策略模式
-    assert_false "$(validate_strategy_mode "invalid")" "Invalid: invalid"
+    # 测试无效的策略模�?    assert_false "$(validate_strategy_mode "invalid")" "Invalid: invalid"
     assert_false "$(validate_strategy_mode "conservative-mode")" "Invalid: conservative-mode"
     assert_false "$(validate_strategy_mode "")" "Invalid: empty string"
 
@@ -58,8 +55,7 @@ test_calculate_strategy() {
     assert_contains "${balance_params}" "swap_size_mb" "Balance has swap_size_mb"
     assert_contains "${balance_params}" "swappiness" "Balance has swappiness"
 
-    # 测试激进模式
-    local aggressive_params
+    # 测试激进模�?    local aggressive_params
     aggressive_params=$(calculate_strategy "aggressive")
 
     assert_contains "${aggressive_params}" "zram_size_mb" "Aggressive has zram_size_mb"
@@ -86,8 +82,7 @@ test_get_strategy_description() {
     balance_desc=$(get_strategy_description "balance")
     assert_not_empty "${balance_desc}" "Balance description not empty"
 
-    # 测试激进模式描述
-    local aggressive_desc
+    # 测试激进模式描�?    local aggressive_desc
     aggressive_desc=$(get_strategy_description "aggressive")
     assert_not_empty "${aggressive_desc}" "Aggressive description not empty"
 
@@ -109,14 +104,12 @@ test_get_strategy_details() {
 }
 
 # ==============================================================================
-# 测试策略配置保存和加载
-# ==============================================================================
+# 测试策略配置保存和加�?# ==============================================================================
 
 test_save_and_load_strategy_config() {
     test_suite_start "save_and_load_strategy_config"
 
-    # 清除之前的配置
-    rm -f "${STRATEGY_CONFIG_FILE}"
+    # 清除之前的配�?    rm -f "${STRATEGY_CONFIG_FILE}"
 
     # 保存策略配置
     save_strategy_config "balance"
@@ -136,14 +129,12 @@ test_save_and_load_strategy_config() {
 }
 
 # ==============================================================================
-# 测试策略模式设置和获取
-# ==============================================================================
+# 测试策略模式设置和获�?# ==============================================================================
 
 test_set_and_get_strategy_mode() {
     test_suite_start "set_and_get_strategy_mode"
 
-    # 清除之前的配置
-    rm -f "${STRATEGY_CONFIG_FILE}"
+    # 清除之前的配�?    rm -f "${STRATEGY_CONFIG_FILE}"
 
     # 设置策略模式
     set_strategy_mode "conservative"
@@ -154,8 +145,7 @@ test_set_and_get_strategy_mode() {
 
     assert_equals "conservative" "${mode}" "Strategy mode matches set value"
 
-    # 切换到平衡模式
-    set_strategy_mode "balance"
+    # 切换到平衡模�?    set_strategy_mode "balance"
     mode=$(get_strategy_mode)
 
     assert_equals "balance" "${mode}" "Strategy mode switched to balance"
@@ -201,8 +191,7 @@ test_strategy_constants() {
 }
 
 # ==============================================================================
-# 运行所有测试
-# ==============================================================================
+# 运行所有测�?# ==============================================================================
 
 run_all_strategy_tests() {
     # 策略验证测试

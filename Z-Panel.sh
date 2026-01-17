@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# Z-Panel Pro - 企业级 Linux 内存优化工具
+# Z-Panel Pro - 企业�?Linux 内存优化工具
 # ==============================================================================
 # @description    ZRAM、Swap、内核参数一体化优化管理工具
 # @version       7.1.0-Enterprise
@@ -17,12 +17,12 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly LIB_DIR="${SCRIPT_DIR}/lib"
 
-# 按依赖顺序导入模块
-source "${LIB_DIR}/core.sh"           # 核心配置和全局状态
-source "${LIB_DIR}/error_handler.sh"  # 错误处理和日志
+# 按依赖顺序导入模�?
+source "${LIB_DIR}/core.sh"           # 核心配置和全局状�?
+source "${LIB_DIR}/error_handler.sh"  # 错误处理和日�?
 source "${LIB_DIR}/utils.sh"          # 工具函数
-source "${LIB_DIR}/lock.sh"           # 文件锁
-source "${LIB_DIR}/system.sh"         # 系统检测
+source "${LIB_DIR}/lock.sh"           # 文件�?
+source "${LIB_DIR}/system.sh"         # 系统检�?
 source "${LIB_DIR}/data_collector.sh" # 数据采集
 source "${LIB_DIR}/ui.sh"             # UI渲染
 source "${LIB_DIR}/strategy.sh"       # 策略管理
@@ -48,9 +48,9 @@ is_service_installed() {
     [[ -f "${SYSTEMD_SERVICE_FILE}" ]] && systemctl is-enabled --quiet "${SERVICE_NAME}" 2>/dev/null
 }
 
-# 启用开机自启
+# 启用开机自�?
 enable_autostart() {
-    log_info "启用开机自启..."
+    log_info "启用开机自�?.."
 
     # 创建systemd服务文件
     cat > "${SYSTEMD_SERVICE_FILE}" << 'EOF'
@@ -69,16 +69,16 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-    # 重载systemd并启用服务
+    # 重载systemd并启用服�?
     systemctl daemon-reload
     systemctl enable "${SERVICE_NAME}"
 
     log_info "开机自启已启用"
 }
 
-# 禁用开机自启
+# 禁用开机自�?
 disable_autostart() {
-    log_info "禁用开机自启..."
+    log_info "禁用开机自�?.."
 
     if [[ -f "${SYSTEMD_SERVICE_FILE}" ]]; then
         systemctl disable "${SERVICE_NAME}" 2>/dev/null || true
@@ -91,10 +91,10 @@ disable_autostart() {
 }
 
 # ==============================================================================
-# 初始化函数
+# 初始化函�?
 # ==============================================================================
 
-# 初始化日志系统
+# 初始化日志系�?
 init_logging_system() {
     # 确保日志目录存在
     mkdir -p "${LOG_DIR}"
@@ -103,12 +103,12 @@ init_logging_system() {
     ensure_file_permissions "${LOG_FILE}" 640
     ensure_dir_permissions "${LOG_DIR}" 750
 
-    # 初始化日志
+    # 初始化日�?
     init_logging "${LOG_FILE}"
     set_log_level "INFO"
 }
 
-# 初始化配置目录
+# 初始化配置目�?
 init_config_dirs() {
     local dirs=(
         "${CONFIG_DIR}"
@@ -125,24 +125,24 @@ init_config_dirs() {
     done
 }
 
-# 检查运行环境
+# 检查运行环�?
 check_runtime_env() {
-    log_info "检查运行环境..."
+    log_info "检查运行环�?.."
 
     # 检查root权限
     if [[ ${EUID} -ne 0 ]]; then
-        handle_error "需要root权限运行此脚本" "exit" "check_runtime_env"
+        handle_error "需要root权限运行此脚�? "exit" "check_runtime_env"
     fi
 
-    # 检查系统
+    # 检查系�?
     detect_system
 
-    # 检查内核版本
+    # 检查内核版�?
     if ! check_kernel_version; then
-        handle_error "内核版本过低，需要 ${MIN_KERNEL_VERSION} 或更高版本" "exit" "check_runtime_env"
+        handle_error "内核版本过低，需�?${MIN_KERNEL_VERSION} 或更高版�? "exit" "check_runtime_env"
     fi
 
-    # 检查依赖命令
+    # 检查依赖命�?
     check_commands awk grep sed free tr cut head tail sort uniq wc
 
     log_info "运行环境检查通过"
@@ -173,17 +173,17 @@ load_system_config() {
     log_info "系统配置加载完成"
 }
 
-# 初始化系统
+# 初始化系�?
 init_system() {
-    log_info "初始化系统..."
+    log_info "初始化系�?.."
 
-    # 初始化配置目录
+    # 初始化配置目�?
     init_config_dirs
 
-    # 初始化日志系统
+    # 初始化日志系�?
     init_logging_system
 
-    # 检查运行环境
+    # 检查运行环�?
     check_runtime_env
 
     # 加载配置
@@ -194,17 +194,17 @@ init_system() {
     current_strategy=$(get_strategy_mode)
     STRATEGY_MODE="${current_strategy:-${STRATEGY_BALANCE}}"
 
-    log_info "系统初始化完成"
+    log_info "系统初始化完�?
 }
 
 # ==============================================================================
-# 命令行参数处理
+# 命令行参数处�?
 # ==============================================================================
 
 # 显示帮助信息
 show_help() {
     cat << EOF
-Z-Panel Pro v${VERSION} - 企业级 Linux 内存优化工具
+Z-Panel Pro v${VERSION} - 企业�?Linux 内存优化工具
 
 用法: $0 [选项]
 
@@ -212,10 +212,10 @@ Z-Panel Pro v${VERSION} - 企业级 Linux 内存优化工具
   -h, --help              显示帮助信息
   -v, --version           显示版本信息
   -m, --monitor           启动实时监控面板
-  -s, --status            显示系统状态
+  -s, --status            显示系统状�?
   -c, --configure         运行配置向导
-  -e, --enable            启用开机自启
-  -d, --disable           禁用开机自启
+  -e, --enable            启用开机自�?
+  -d, --disable           禁用开机自�?
   -b, --backup            创建系统备份
   -r, --restore <ID>      还原指定备份
   --strategy <mode>       设置策略模式 (conservative|balance|aggressive)
@@ -223,7 +223,7 @@ Z-Panel Pro v${VERSION} - 企业级 Linux 内存优化工具
 
 示例:
   $0 -m                   启动实时监控面板
-  $0 -s                   显示系统状态
+  $0 -s                   显示系统状�?
   $0 -c                   运行配置向导
   $0 --strategy balance   设置平衡模式
   $0 -b                   创建系统备份
@@ -243,7 +243,7 @@ EOF
 }
 
 # ==============================================================================
-# 主程序入口
+# 主程序入�?
 # ==============================================================================
 
 main() {
@@ -251,7 +251,7 @@ main() {
     local strategy=""
     local backup_id=""
 
-    # 解析命令行参数
+    # 解析命令行参�?
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -h|--help)
@@ -307,7 +307,7 @@ main() {
         esac
     done
 
-    # 获取文件锁
+    # 获取文件�?
     if ! acquire_lock; then
         local lock_pid
         lock_pid=$(get_lock_pid)
@@ -315,7 +315,7 @@ main() {
         exit 1
     fi
 
-    # 初始化系统
+    # 初始化系�?
     init_system
 
     # 设置策略
@@ -324,7 +324,7 @@ main() {
             set_strategy_mode "${strategy}"
             log_info "策略已设置为: ${strategy}"
         else
-            log_error "无效的策略模式: ${strategy}"
+            log_error "无效的策略模�? ${strategy}"
             exit 1
         fi
     fi
@@ -361,7 +361,7 @@ main() {
                 exit 1
             fi
             if restore_backup "${backup_id}"; then
-                log_info "备份还原成功，请重启系统使更改生效"
+                log_info "备份还原成功，请重启系统使更改生�?
             else
                 log_error "备份还原失败"
                 exit 1
@@ -372,12 +372,12 @@ main() {
             ;;
     esac
 
-    # 释放文件锁
+    # 释放文件�?
     release_lock
 }
 
-# 捕获退出信号
+# 捕获退出信�?
 trap 'release_lock' EXIT INT TERM QUIT
 
-# 启动主程序
+# 启动主程�?
 main "$@"

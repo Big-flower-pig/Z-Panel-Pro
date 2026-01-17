@@ -3,8 +3,7 @@
 # Z-Panel Pro - utils.sh 单元测试
 # ==============================================================================
 
-# 导入被测试模块
-source "${SCRIPT_DIR}/../lib/utils.sh"
+# 导入被测试模�?source "${SCRIPT_DIR}/../lib/utils.sh"
 
 # ==============================================================================
 # 测试验证函数
@@ -67,13 +66,11 @@ test_validate_float() {
 test_validate_filename() {
     test_suite_start "validate_filename"
 
-    # 测试有效文件名
-    assert_true "$(validate_filename "test.txt")" "Valid filename: test.txt"
+    # 测试有效文件�?    assert_true "$(validate_filename "test.txt")" "Valid filename: test.txt"
     assert_true "$(validate_filename "file-123.txt")" "Valid filename: file-123.txt"
     assert_true "$(validate_filename "backup_2024.tar.gz")" "Valid filename: backup_2024.tar.gz"
 
-    # 测试无效文件名（路径遍历攻击）
-    assert_false "$(validate_filename "../etc/passwd")" "Invalid: path traversal (../)"
+    # 测试无效文件名（路径遍历攻击�?    assert_false "$(validate_filename "../etc/passwd")" "Invalid: path traversal (../)"
     assert_false "$(validate_filename "/etc/passwd")" "Invalid: absolute path"
     assert_false "$(validate_filename "file;rm -rf /")" "Invalid: command injection (;)"
     assert_false "$(validate_filename "file\`whoami\`")" "Invalid: command injection (\`)"
@@ -106,8 +103,7 @@ test_validate_path() {
 test_convert_size_to_mb() {
     test_suite_start "convert_size_to_mb"
 
-    # 测试字节数转换
-    assert_equals "1" "$(convert_size_to_mb 1048576)" "1 MB = 1048576 bytes"
+    # 测试字节数转�?    assert_equals "1" "$(convert_size_to_mb 1048576)" "1 MB = 1048576 bytes"
     assert_equals "1024" "$(convert_size_to_mb 1073741824)" "1024 MB = 1073741824 bytes"
 
     # 测试KB转换
@@ -133,9 +129,9 @@ test_convert_mb_to_human() {
     assert_equals "1024 MB" "$(convert_mb_to_human 1024)" "1024 MB"
 
     # 测试GB转换
-    assert_equals "1.00 GB" "$(convert_mb_to_human 1025)" "1025 MB ≈ 1.00 GB"
+    assert_equals "1.00 GB" "$(convert_mb_to_human 1025)" "1025 MB �?1.00 GB"
     assert_equals "2.00 GB" "$(convert_mb_to_human 2048)" "2048 MB = 2.00 GB"
-    assert_equals "15.62 GB" "$(convert_mb_to_human 16000)" "16000 MB ≈ 15.62 GB"
+    assert_equals "15.62 GB" "$(convert_mb_to_human 16000)" "16000 MB �?15.62 GB"
 
     test_suite_end "convert_mb_to_human"
 }
@@ -143,8 +139,7 @@ test_convert_mb_to_human() {
 test_calculate_percentage() {
     test_suite_start "calculate_percentage"
 
-    # 测试百分比计算
-    assert_equals "50" "$(calculate_percentage 50 100)" "50/100 = 50%"
+    # 测试百分比计�?    assert_equals "50" "$(calculate_percentage 50 100)" "50/100 = 50%"
     assert_equals "25" "$(calculate_percentage 25 100)" "25/100 = 25%"
     assert_equals "75" "$(calculate_percentage 75 100)" "75/100 = 75%"
 
@@ -173,8 +168,7 @@ test_compare_float() {
 }
 
 # ==============================================================================
-# 测试字符串处理函数
-# ==============================================================================
+# 测试字符串处理函�?# ==============================================================================
 
 test_trim() {
     test_suite_start "trim"
@@ -247,8 +241,7 @@ test_array_unique() {
 test_get_timestamp() {
     test_suite_start "get_timestamp"
 
-    # 测试获取时间戳
-    local timestamp
+    # 测试获取时间�?    local timestamp
     timestamp=$(get_timestamp)
 
     assert_not_empty "${timestamp}" "Timestamp is not empty"
@@ -272,8 +265,7 @@ test_format_timestamp() {
 test_time_diff() {
     test_suite_start "time_diff"
 
-    # 测试时间差计算
-    local diff
+    # 测试时间差计�?    local diff
     diff=$(time_diff "1704067200" "1704067260")
 
     assert_equals "60" "${diff}" "60 seconds difference"
@@ -282,8 +274,7 @@ test_time_diff() {
 }
 
 # ==============================================================================
-# 运行所有测试
-# ==============================================================================
+# 运行所有测�?# ==============================================================================
 
 run_all_utils_tests() {
     # 验证函数测试
@@ -299,8 +290,7 @@ run_all_utils_tests() {
     test_calculate_percentage
     test_compare_float
 
-    # 字符串处理测试
-    test_trim
+    # 字符串处理测�?    test_trim
     test_escape_sed_pattern
     test_escape_shell_string
 

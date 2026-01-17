@@ -20,49 +20,45 @@ declare -A MAIN_MENU_ITEMS=(
     ["7"]="备份还原"
     ["8"]="日志查看"
     ["9"]="高级设置"
-    ["0"]="退出程序"
+    ["0"]="退出程�?
 )
 
 # ==============================================================================
-# ZRAM管理菜单项定义
-# ==============================================================================
+# ZRAM管理菜单项定�?# ==============================================================================
 declare -A ZRAM_MENU_ITEMS=(
     ["1"]="启用ZRAM"
     ["2"]="禁用ZRAM"
     ["3"]="调整ZRAM大小"
     ["4"]="更换压缩算法"
-    ["5"]="查看ZRAM状态"
-    ["0"]="返回主菜单"
+    ["5"]="查看ZRAM状�?
+    ["0"]="返回主菜�?
 )
 
 # ==============================================================================
-# Swap管理菜单项定义
-# ==============================================================================
+# Swap管理菜单项定�?# ==============================================================================
 declare -A SWAP_MENU_ITEMS=(
     ["1"]="创建物理Swap"
     ["2"]="删除物理Swap"
-    ["3"]="查看Swap状态"
-    ["0"]="返回主菜单"
+    ["3"]="查看Swap状�?
+    ["0"]="返回主菜�?
 )
 
 # ==============================================================================
-# 策略管理菜单项定义
-# ==============================================================================
+# 策略管理菜单项定�?# ==============================================================================
 declare -A STRATEGY_MENU_ITEMS=(
     ["1"]="保守模式"
     ["2"]="平衡模式"
-    ["3"]="激进模式"
-    ["4"]="自定义模式"
+    ["3"]="激进模�?
+    ["4"]="自定义模�?
     ["5"]="查看当前策略"
-    ["0"]="返回主菜单"
+    ["0"]="返回主菜�?
 )
 
 # ==============================================================================
-# 显示主菜单
-# ==============================================================================
+# 显示主菜�?# ==============================================================================
 show_main_menu() {
     ui_clear
-    ui_draw_header "Z-Panel Pro v${VERSION} - 主菜单"
+    ui_draw_header "Z-Panel Pro v${VERSION} - 主菜�?
     ui_draw_line
 
     for key in "${!MAIN_MENU_ITEMS[@]}"; do
@@ -144,7 +140,7 @@ handle_zram_management() {
                 log_info "禁用ZRAM..."
                 if ui_confirm "确定要禁用ZRAM吗？"; then
                     if disable_zram; then
-                        log_info "ZRAM已禁用"
+                        log_info "ZRAM已禁�?
                     else
                         log_error "禁用ZRAM失败"
                     fi
@@ -156,7 +152,7 @@ handle_zram_management() {
                 read -p "请输入ZRAM大小(MB): " zram_size
                 if validate_positive_integer "${zram_size}"; then
                     set_config 'zram_size_mb' "${zram_size}"
-                    log_info "ZRAM大小已设置为${zram_size}MB，请重新启用ZRAM以生效"
+                    log_info "ZRAM大小已设置为${zram_size}MB，请重新启用ZRAM以生�?
                 else
                     log_error "无效的ZRAM大小"
                 fi
@@ -169,7 +165,7 @@ handle_zram_management() {
                 selected=$(ui_select_menu "选择压缩算法" "${options[@]}")
                 if [[ -n "${selected}" ]]; then
                     set_config 'compression_algorithm' "${selected}"
-                    log_info "压缩算法已设置为${selected}，请重新启用ZRAM以生效"
+                    log_info "压缩算法已设置为${selected}，请重新启用ZRAM以生�?
                 fi
                 ui_pause
                 ;;
@@ -215,7 +211,7 @@ handle_swap_management() {
                 log_info "删除物理Swap..."
                 if ui_confirm "确定要删除物理Swap吗？"; then
                     if disable_swap_file; then
-                        log_info "物理Swap已删除"
+                        log_info "物理Swap已删�?
                     else
                         log_error "删除物理Swap失败"
                     fi
@@ -258,15 +254,15 @@ handle_strategy_management() {
                 ;;
             3)
                 set_strategy_mode "aggressive"
-                log_info "已切换到激进模式"
+                log_info "已切换到激进模�?
                 ui_pause
                 ;;
             4)
-                log_info "自定义模式..."
+                log_info "自定义模�?.."
                 read -p "请输入ZRAM大小(MB): " zram_size
                 read -p "请输入Swap大小(MB): " swap_size
-                read -p "请输入swappiness值(0-100): " swappiness
-                read -p "请输入I/O熔断阈值(0-100): " io_fuse
+                read -p "请输入swappiness�?0-100): " swappiness
+                read -p "请输入I/O熔断阈�?0-100): " io_fuse
 
                 if validate_positive_integer "${zram_size}" && \
                    validate_positive_integer "${swap_size}" && \
@@ -278,7 +274,7 @@ handle_strategy_management() {
                     set_config 'io_fuse_threshold' "${io_fuse}"
                     log_info "自定义策略已设置"
                 else
-                    log_error "无效的参数"
+                    log_error "无效的参�?
                 fi
                 ui_pause
                 ;;
@@ -329,10 +325,10 @@ handle_system_info() {
 handle_backup_restore() {
     while true; do
         ui_clear
-        ui_draw_header "备份与还原"
+        ui_draw_header "备份与还�?
         ui_draw_line
 
-        local options=("创建备份" "还原备份" "查看备份" "删除备份" "清理旧备份" "返回主菜单")
+        local options=("创建备份" "还原备份" "查看备份" "删除备份" "清理旧备�? "返回主菜�?)
         local choice
         choice=$(ui_select_menu "选择操作" "${options[@]}")
 
@@ -352,7 +348,7 @@ handle_backup_restore() {
                 local backups
                 readarray -t backups < <(list_backups)
                 if [[ ${#backups[@]} -eq 0 ]]; then
-                    log_warn "没有可用的备份"
+                    log_warn "没有可用的备�?
                     ui_pause
                     continue
                 fi
@@ -361,9 +357,9 @@ handle_backup_restore() {
                 if [[ -n "${selected}" ]]; then
                     local backup_id
                     backup_id=$(echo "${selected}" | cut -d'|' -f1)
-                    if ui_confirm "确定要还原备份 ${backup_id} 吗？"; then
+                    if ui_confirm "确定要还原备�?${backup_id} 吗？"; then
                         if restore_backup "${backup_id}"; then
-                            log_info "备份还原成功，请重启系统使更改生效"
+                            log_info "备份还原成功，请重启系统使更改生�?
                         else
                             log_error "备份还原失败"
                         fi
@@ -379,7 +375,7 @@ handle_backup_restore() {
                 local backups
                 readarray -t backups < <(list_backups)
                 if [[ ${#backups[@]} -eq 0 ]]; then
-                    log_warn "没有可用的备份"
+                    log_warn "没有可用的备�?
                     ui_pause
                     continue
                 fi
@@ -388,9 +384,9 @@ handle_backup_restore() {
                 if [[ -n "${selected}" ]]; then
                     local backup_id
                     backup_id=$(echo "${selected}" | cut -d'|' -f1)
-                    if ui_confirm "确定要删除备份 ${backup_id} 吗？"; then
+                    if ui_confirm "确定要删除备�?${backup_id} 吗？"; then
                         if delete_backup "${backup_id}"; then
-                            log_info "备份已删除"
+                            log_info "备份已删�?
                         else
                             log_error "删除备份失败"
                         fi
@@ -398,7 +394,7 @@ handle_backup_restore() {
                 fi
                 ui_pause
                 ;;
-            "清理旧备份")
+            "清理旧备�?)
                 read -p "保留最近几天的备份 [默认: 7]: " days
                 days=${days:-7}
                 if validate_positive_integer "${days}"; then
@@ -408,11 +404,11 @@ handle_backup_restore() {
                         log_error "清理备份失败"
                     fi
                 else
-                    log_error "无效的天数"
+                    log_error "无效的天�?
                 fi
                 ui_pause
                 ;;
-            "返回主菜单")
+            "返回主菜�?)
                 return
                 ;;
         esac
@@ -428,12 +424,12 @@ handle_log_viewing() {
         ui_draw_header "日志查看"
         ui_draw_line
 
-        local options=("查看主日志" "查看ZRAM日志" "查看Swap日志" "清空日志" "返回主菜单")
+        local options=("查看主日�? "查看ZRAM日志" "查看Swap日志" "清空日志" "返回主菜�?)
         local choice
         choice=$(ui_select_menu "选择操作" "${options[@]}")
 
         case "${choice}" in
-            "查看主日志")
+            "查看主日�?)
                 if [[ -f "${LOG_FILE}" ]]; then
                     less "${LOG_FILE}"
                 else
@@ -446,7 +442,7 @@ handle_log_viewing() {
                 if [[ -f "${zram_log}" ]]; then
                     less "${zram_log}"
                 else
-                    log_warn "ZRAM日志文件不存在"
+                    log_warn "ZRAM日志文件不存�?
                     ui_pause
                 fi
                 ;;
@@ -455,20 +451,20 @@ handle_log_viewing() {
                 if [[ -f "${swap_log}" ]]; then
                     less "${swap_log}"
                 else
-                    log_warn "Swap日志文件不存在"
+                    log_warn "Swap日志文件不存�?
                     ui_pause
                 fi
                 ;;
             "清空日志")
-                if ui_confirm "确定要清空所有日志吗？"; then
+                if ui_confirm "确定要清空所有日志吗�?; then
                     > "${LOG_FILE}"
                     > "${LOG_DIR}/zram.log" 2>/dev/null
                     > "${LOG_DIR}/swap.log" 2>/dev/null
-                    log_info "日志已清空"
+                    log_info "日志已清�?
                 fi
                 ui_pause
                 ;;
-            "返回主菜单")
+            "返回主菜�?)
                 return
                 ;;
         esac
@@ -484,18 +480,18 @@ handle_advanced_settings() {
         ui_draw_header "高级设置"
         ui_draw_line
 
-        local options=("刷新间隔" "日志级别" "启用/禁用开机自启" "返回主菜单")
+        local options=("刷新间隔" "日志级别" "启用/禁用开机自�? "返回主菜�?)
         local choice
         choice=$(ui_select_menu "选择操作" "${options[@]}")
 
         case "${choice}" in
             "刷新间隔")
-                read -p "请输入刷新间隔(秒) [当前: $(get_config 'refresh_interval')]: " interval
+                read -p "请输入刷新间�?�? [当前: $(get_config 'refresh_interval')]: " interval
                 if validate_positive_integer "${interval}"; then
                     set_config 'refresh_interval' "${interval}"
-                    log_info "刷新间隔已设置为${interval}秒"
+                    log_info "刷新间隔已设置为${interval}�?
                 else
-                    log_error "无效的刷新间隔"
+                    log_error "无效的刷新间�?
                 fi
                 ui_pause
                 ;;
@@ -509,21 +505,21 @@ handle_advanced_settings() {
                 fi
                 ui_pause
                 ;;
-            "启用/禁用开机自启")
+            "启用/禁用开机自�?)
                 if is_service_installed; then
-                    if ui_confirm "确定要禁用开机自启吗？"; then
+                    if ui_confirm "确定要禁用开机自启吗�?; then
                         disable_autostart
                         log_info "开机自启已禁用"
                     fi
                 else
-                    if ui_confirm "确定要启用开机自启吗？"; then
+                    if ui_confirm "确定要启用开机自启吗�?; then
                         enable_autostart
                         log_info "开机自启已启用"
                     fi
                 fi
                 ui_pause
                 ;;
-            "返回主菜单")
+            "返回主菜�?)
                 return
                 ;;
         esac
@@ -531,8 +527,7 @@ handle_advanced_settings() {
 }
 
 # ==============================================================================
-# 主程序入口
-# ==============================================================================
+# 主程序入�?# ==============================================================================
 main_menu() {
     while true; do
         show_main_menu
@@ -567,7 +562,7 @@ main_menu() {
                 handle_advanced_settings
                 ;;
             0)
-                log_info "感谢使用 Z-Panel Pro！"
+                log_info "感谢使用 Z-Panel Pro�?
                 exit 0
                 ;;
             *)

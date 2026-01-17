@@ -1,7 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# Z-Panel Pro - 通用工具函数库
-# ==============================================================================
+# Z-Panel Pro - 通用工具函数�?# ==============================================================================
 # @description    通用工具函数集合，包含验证、转换等操作
 # @version       7.1.0-Enterprise
 # @author        Z-Panel Team
@@ -11,8 +10,7 @@
 # 输入验证函数
 # ==============================================================================
 
-# 验证正整数
-validate_positive_integer() {
+# 验证正整�?validate_positive_integer() {
     local var="$1"
     [[ "${var}" =~ ^[0-9]+$ ]] && [[ ${var} -gt 0 ]]
 }
@@ -23,14 +21,12 @@ validate_number() {
     [[ "${var}" =~ ^-?[0-9]+$ ]]
 }
 
-# 验证浮点数
-validate_float() {
+# 验证浮点�?validate_float() {
     local var="$1"
     [[ "${var}" =~ ^-?[0-9]+\.?[0-9]*$ ]]
 }
 
-# 验证文件名（安全字符）
-validate_filename() {
+# 验证文件名（安全字符�?validate_filename() {
     local filename="$1"
     # 只允许字母、数字、下划线、点、连字符
     [[ "${filename}" =~ ^[a-zA-Z0-9_.-]+$ ]]
@@ -43,8 +39,7 @@ validate_path() {
     [[ "${path}" != *".."* ]] && [[ "${path}" == /* ]]
 }
 
-# 验证PID有效性
-validate_pid() {
+# 验证PID有效�?validate_pid() {
     local pid="$1"
     [[ "${pid}" =~ ^[0-9]+$ ]] && [[ -d "/proc/${pid}" ]] && [[ -f "/proc/${pid}/cmdline" ]]
 }
@@ -54,15 +49,13 @@ validate_pid() {
 # ==============================================================================
 
 # 将大小字符串转换为MB
-# @param size: 大小字符串，如 "1G", "512M", "2048K"
-# @return: 转换后的MB数值
-convert_size_to_mb() {
+# @param size: 大小字符串，�?"1G", "512M", "2048K"
+# @return: 转换后的MB数�?convert_size_to_mb() {
     local size="$1"
     local unit
     local num
 
-    # 提取单位和数值
-    unit="${size//[0-9.]/}"
+    # 提取单位和数�?    unit="${size//[0-9.]/}"
     num="${size//[KMGTiB]/}"
 
     # 处理单位
@@ -80,15 +73,13 @@ convert_size_to_mb() {
             echo "$((num / 1048576))"
             ;;
         *)
-            log_warn "未知的单位: ${unit}, 默认为MB"
+            log_warn "未知的单�? ${unit}, 默认为MB"
             echo "${num}"
             ;;
     esac
 }
 
-# 将MB转换为人类可读格式
-# @param mb: MB数值
-# @return: 人类可读的大小字符串
+# 将MB转换为人类可读格�?# @param mb: MB数�?# @return: 人类可读的大小字符串
 convert_mb_to_human() {
     local mb="$1"
 
@@ -105,11 +96,9 @@ convert_mb_to_human() {
 # 计算函数
 # ==============================================================================
 
-# 计算百分比
-# @param used: 已使用量
+# 计算百分�?# @param used: 已使用量
 # @param total: 总量
-# @return: 百分比值（0-100）
-calculate_percentage() {
+# @return: 百分比值（0-100�?calculate_percentage() {
     local used="$1"
     local total="$2"
 
@@ -126,10 +115,8 @@ calculate_percentage() {
 }
 
 # 安全的浮点数比较
-# @param op: 比较操作符 (lt, le, eq, ne, ge, gt)
-# @param val1: 第一个值
-# @param val2: 第二个值
-# @return: 0为真，1为假
+# @param op: 比较操作�?(lt, le, eq, ne, ge, gt)
+# @param val1: 第一个�?# @param val2: 第二个�?# @return: 0为真�?为假
 compare_float() {
     local op="$1"
     local val1="$2"
@@ -142,10 +129,8 @@ compare_float() {
 # 文件操作函数
 # ==============================================================================
 
-# 安全的文件权限设置
-# @param file: 文件路径
-# @param expected_perms: 期望的权限（八进制，默认600）
-ensure_file_permissions() {
+# 安全的文件权限设�?# @param file: 文件路径
+# @param expected_perms: 期望的权限（八进制，默认600�?ensure_file_permissions() {
     local file="$1"
     local expected_perms="${2:-600}"
 
@@ -158,16 +143,14 @@ ensure_file_permissions() {
                 log_error "无法设置文件权限: ${file}"
                 return 1
             }
-            log_debug "文件权限已更新: ${file} -> ${expected_perms}"
+            log_debug "文件权限已更�? ${file} -> ${expected_perms}"
         fi
     fi
     return 0
 }
 
-# 安全的目录权限设置
-# @param dir: 目录路径
-# @param expected_perms: 期望的权限（八进制，默认700）
-ensure_dir_permissions() {
+# 安全的目录权限设�?# @param dir: 目录路径
+# @param expected_perms: 期望的权限（八进制，默认700�?ensure_dir_permissions() {
     local dir="$1"
     local expected_perms="${2:-700}"
 
@@ -180,29 +163,24 @@ ensure_dir_permissions() {
                 log_error "无法设置目录权限: ${dir}"
                 return 1
             }
-            log_debug "目录权限已更新: ${dir} -> ${expected_perms}"
+            log_debug "目录权限已更�? ${dir} -> ${expected_perms}"
         fi
     fi
     return 0
 }
 
-# 安全的配置加载
-# @param file: 配置文件路径
-# @return: 0为成功，1为失败
-safe_source() {
+# 安全的配置加�?# @param file: 配置文件路径
+# @return: 0为成功，1为失�?safe_source() {
     local file="$1"
 
-    # 检查文件是否存在
-    if [[ ! -f "${file}" ]]; then
-        log_error "配置文件不存在: ${file}"
+    # 检查文件是否存�?    if [[ ! -f "${file}" ]]; then
+        log_error "配置文件不存�? ${file}"
         return 1
     fi
 
-    # 检查文件权限
-    ensure_file_permissions "${file}" 600 || return 1
+    # 检查文件权�?    ensure_file_permissions "${file}" 600 || return 1
 
-    # 检查文件内容安全性（防止命令注入）
-    local dangerous_patterns=(
+    # 检查文件内容安全性（防止命令注入�?    local dangerous_patterns=(
         '`'
         '\$\([^)]*\)'
         '>'
@@ -224,11 +202,9 @@ safe_source() {
     return 0
 }
 
-# 配置保存函数（统一处理）
-# @param file: 目标文件路径
+# 配置保存函数（统一处理�?# @param file: 目标文件路径
 # @param content: 文件内容
-# @return: 0为成功，1为失败
-save_config_file() {
+# @return: 0为成功，1为失�?save_config_file() {
     local file="$1"
     local content="$2"
 
@@ -250,24 +226,21 @@ save_config_file() {
     # 设置文件权限
     chmod 600 "${file}" 2>/dev/null || true
 
-    log_debug "配置文件已保存: ${file}"
+    log_debug "配置文件已保�? ${file}"
     return 0
 }
 
 # ==============================================================================
-# 命令检查函数
-# ==============================================================================
+# 命令检查函�?# ==============================================================================
 
-# 检查命令是否存在
-# @param cmd: 命令名称
+# 检查命令是否存�?# @param cmd: 命令名称
 # @return: 0为存在，1为不存在
 check_command() {
     local cmd="$1"
     command -v "${cmd}" &> /dev/null
 }
 
-# 批量检查命令依赖
-# @param commands: 需要检查的命令数组
+# 批量检查命令依�?# @param commands: 需要检查的命令数组
 # @return: 0为全部存在，1为有缺失
 check_commands() {
     local commands=("$@")
@@ -287,9 +260,7 @@ check_commands() {
     return 0
 }
 
-# 检查系统依赖
-# @return: 0为满足，1为缺失
-check_dependencies() {
+# 检查系统依�?# @return: 0为满足，1为缺�?check_dependencies() {
     local missing=()
     local warnings=()
 
@@ -302,14 +273,13 @@ check_dependencies() {
         check_command "${cmd}" || missing+=("${cmd}")
     done
 
-    # 可选命令
-    check_command zramctl || warnings+=("zramctl")
+    # 可选命�?    check_command zramctl || warnings+=("zramctl")
     check_command sysctl || warnings+=("sysctl")
 
     if [[ ${#missing[@]} -gt 0 ]]; then
         log_error "缺少必需命令: ${missing[*]}"
         echo ""
-        echo "请安装缺失的依赖："
+        echo "请安装缺失的依赖�?
         echo "  Debian/Ubuntu: apt-get install -y ${missing[*]}"
         echo "  CentOS/RHEL: yum install -y ${missing[*]}"
         echo "  Alpine: apk add ${missing[*]}"
@@ -318,7 +288,7 @@ check_dependencies() {
     fi
 
     if [[ ${#warnings[@]} -gt 0 ]]; then
-        log_warn "缺少可选命令: ${warnings[*]}"
+        log_warn "缺少可选命�? ${warnings[*]}"
         log_warn "某些功能可能无法正常使用"
     fi
 
@@ -326,8 +296,7 @@ check_dependencies() {
 }
 
 # ==============================================================================
-# 字符串处理函数
-# ==============================================================================
+# 字符串处理函�?# ==============================================================================
 
 # 去除字符串两端的空白
 trim() {
@@ -353,10 +322,8 @@ escape_shell_string() {
 # 数组操作函数
 # ==============================================================================
 
-# 检查数组是否包含元素
-# @param needle: 要查找的元素
-# @param haystack: 数组名（不加@）
-# @return: 0为包含，1为不包含
+# 检查数组是否包含元�?# @param needle: 要查找的元素
+# @param haystack: 数组名（不加@�?# @return: 0为包含，1为不包含
 array_contains() {
     local needle="$1"
     local haystack_name="$2"
@@ -371,8 +338,7 @@ array_contains() {
 }
 
 # 数组去重
-# @param array_name: 数组名（不加@）
-# @return: 去重后的数组
+# @param array_name: 数组名（不加@�?# @return: 去重后的数组
 array_unique() {
     local array_name="$1"
     local -n arr_ref="${array_name}"
@@ -397,9 +363,7 @@ get_timestamp() {
 }
 
 # 格式化时间戳
-# @param timestamp: Unix时间戳
-# @param format: 格式字符串（默认：%Y-%m-%d %H:%M:%S）
-format_timestamp() {
+# @param timestamp: Unix时间�?# @param format: 格式字符串（默认�?Y-%m-%d %H:%M:%S�?format_timestamp() {
     local timestamp="$1"
     local format="${2:-%Y-%m-%d %H:%M:%S}"
     date -d "@${timestamp}" +"${format}" 2>/dev/null || \
@@ -407,10 +371,8 @@ format_timestamp() {
     echo "${timestamp}"
 }
 
-# 计算时间差
-# @param start_ts: 开始时间戳
-# @param end_ts: 结束时间戳
-# @return: 秒数
+# 计算时间�?# @param start_ts: 开始时间戳
+# @param end_ts: 结束时间�?# @return: 秒数
 time_diff() {
     local start_ts="$1"
     local end_ts="${2:-$(get_timestamp)}"
@@ -421,27 +383,22 @@ time_diff() {
 # 进程管理函数
 # ==============================================================================
 
-# 检查进程是否运行
-# @param pid: 进程ID
-# @return: 0为运行中，1为未运行
+# 检查进程是否运�?# @param pid: 进程ID
+# @return: 0为运行中�?为未运行
 is_process_running() {
     local pid="$1"
     [[ -d "/proc/${pid}" ]] 2>/dev/null
 }
 
 # 通过名称查找进程PID
-# @param name: 进程名
-# @return: PID列表（每行一个）
+# @param name: 进程�?# @return: PID列表（每行一个）
 find_pids_by_name() {
     local name="$1"
     pgrep -f "${name}" 2>/dev/null || echo ""
 }
 
-# 安全地杀死进程
-# @param pid: 进程ID
-# @param signal: 信号（默认TERM）
-# @return: 0为成功，1为失败
-kill_process_safe() {
+# 安全地杀死进�?# @param pid: 进程ID
+# @param signal: 信号（默认TERM�?# @return: 0为成功，1为失�?kill_process_safe() {
     local pid="$1"
     local signal="${2:-TERM}"
 
@@ -451,10 +408,10 @@ kill_process_safe() {
     fi
 
     if kill -"${signal}" "${pid}" 2>/dev/null; then
-        log_debug "进程 ${pid} 已发送 ${signal} 信号"
+        log_debug "进程 ${pid} 已发�?${signal} 信号"
         return 0
     else
-        log_warn "无法向进程 ${pid} 发送 ${signal} 信号"
+        log_warn "无法向进�?${pid} 发�?${signal} 信号"
         return 1
     fi
 }

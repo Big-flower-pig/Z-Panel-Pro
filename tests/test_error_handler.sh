@@ -3,8 +3,7 @@
 # Z-Panel Pro - error_handler.sh 单元测试
 # ==============================================================================
 
-# 导入被测试模块
-source "${SCRIPT_DIR}/../lib/error_handler.sh"
+# 导入被测试模�?source "${SCRIPT_DIR}/../lib/error_handler.sh"
 source "${SCRIPT_DIR}/../lib/core.sh"
 
 # 测试日志目录
@@ -41,8 +40,7 @@ test_log_message() {
     log_message "INFO" "Test info message"
     assert_file_exists "${test_log}" "Log file exists"
 
-    # 检查日志内容
-    local log_content
+    # 检查日志内�?    local log_content
     log_content=$(cat "${test_log}")
     assert_contains "${log_content}" "Test info message" "Log contains test message"
     assert_contains "${log_content}" "[INFO]" "Log contains INFO tag"
@@ -148,8 +146,7 @@ test_log_level_filtering() {
     # 设置为ERROR级别
     set_log_level "ERROR"
 
-    # 尝试记录不同级别的日志
-    log_debug "Debug message"
+    # 尝试记录不同级别的日�?    log_debug "Debug message"
     log_info "Info message"
     log_warn "Warning message"
     log_error "Error message"
@@ -199,8 +196,7 @@ test_handle_error_exit() {
     local test_log="${TEST_LOG_DIR}/test_error_exit.log"
     init_logging "${test_log}"
 
-    # 测试exit动作（会退出脚本，这里只能测试日志记录）
-    # 实际测试需要子进程
+    # 测试exit动作（会退出脚本，这里只能测试日志记录�?    # 实际测试需要子进程
     (
         handle_error "Test error" "exit" "test_function"
     ) 2>/dev/null || true
@@ -225,8 +221,7 @@ test_assert_equals() {
     # 测试相等情况
     assert_equals "1" "1" "assert_equals should pass for equal values"
 
-    # 测试不相等情况（会在子进程中测试）
-    local result
+    # 测试不相等情况（会在子进程中测试�?    local result
     result=$(assert_equals "1" "2" "test" 2>&1 || echo "FAILED")
     assert_contains "${result}" "FAILED" "assert_equals should fail for unequal values"
 
@@ -239,8 +234,7 @@ test_assert_not_empty() {
     # 测试非空情况
     assert_not_empty "test" "assert_not_empty should pass for non-empty string"
 
-    # 测试空情况
-    local result
+    # 测试空情�?    local result
     result=$(assert_not_empty "" "test" 2>&1 || echo "FAILED")
     assert_contains "${result}" "FAILED" "assert_not_empty should fail for empty string"
 
@@ -257,8 +251,7 @@ test_assert_file_exists() {
     # 测试文件存在
     assert_file_exists "${test_file}" "assert_file_exists should pass for existing file"
 
-    # 测试文件不存在
-    local result
+    # 测试文件不存�?    local result
     result=$(assert_file_exists "${TEST_LOG_DIR}/nonexistent.txt" "test" 2>&1 || echo "FAILED")
     assert_contains "${result}" "FAILED" "assert_file_exists should fail for non-existent file"
 
@@ -271,8 +264,7 @@ test_assert_file_exists() {
 test_assert_command_exists() {
     test_suite_start "assert_command_exists"
 
-    # 测试存在的命令
-    assert_command_exists "bash" "assert_command_exists should pass for bash"
+    # 测试存在的命�?    assert_command_exists "bash" "assert_command_exists should pass for bash"
     assert_command_exists "ls" "assert_command_exists should pass for ls"
 
     # 测试不存在的命令
@@ -290,8 +282,7 @@ test_assert_command_exists() {
 test_execute_with_retry() {
     test_suite_start "execute_with_retry"
 
-    # 测试成功的命令（第一次就成功）
-    local result
+    # 测试成功的命令（第一次就成功�?    local result
     result=$(execute_with_retry "echo 'success'" 3 1)
     assert_equals "success" "${result}" "Successful command should return output"
 
@@ -309,8 +300,7 @@ test_execute_with_retry() {
 }
 
 # ==============================================================================
-# 运行所有测试
-# ==============================================================================
+# 运行所有测�?# ==============================================================================
 
 run_all_error_handler_tests() {
     # 日志级别测试

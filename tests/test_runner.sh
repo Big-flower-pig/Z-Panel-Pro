@@ -1,7 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# Z-Panel Pro - 单元测试运行器
-# ==============================================================================
+# Z-Panel Pro - 单元测试运行�?# ==============================================================================
 # @description    单元测试框架和测试运行器
 # @version       7.1.0-Enterprise
 # @author        Z-Panel Team
@@ -56,8 +55,7 @@ assert_equals() {
     fi
 }
 
-# 断言不相等
-assert_not_equals() {
+# 断言不相�?assert_not_equals() {
     local expected="$1"
     local actual="$2"
     local message="${3:-Expected '${expected}' to not equal '${actual}'}"
@@ -162,8 +160,7 @@ assert_empty() {
     fi
 }
 
-# 断言不为空
-assert_not_empty() {
+# 断言不为�?assert_not_empty() {
     local value="$1"
     local message="${2:-Expected value to not be empty}"
 
@@ -247,8 +244,7 @@ assert_file_exists() {
     fi
 }
 
-# 断言文件不存在
-assert_file_not_exists() {
+# 断言文件不存�?assert_file_not_exists() {
     local file="$1"
     local message="${2:-Expected file '${file}' to not exist}"
 
@@ -311,8 +307,7 @@ assert_command_failure() {
 # 测试套件管理
 # ==============================================================================
 
-# 开始测试套件
-test_suite_start() {
+# 开始测试套�?test_suite_start() {
     local name="$1"
     echo ""
     echo -e "${COLOR_CYAN}========================================${COLOR_NC}"
@@ -341,9 +336,9 @@ show_test_summary() {
 
     if [[ ${TESTS_FAILED} -gt 0 ]]; then
         echo ""
-        echo -e "${COLOR_RED}失败的测试:${COLOR_NC}"
+        echo -e "${COLOR_RED}失败的测�?${COLOR_NC}"
         for failed_test in "${FAILED_TESTS[@]}"; do
-            echo -e "  ${COLOR_RED}✗${COLOR_NC} ${failed_test}"
+            echo -e "  ${COLOR_RED}�?{COLOR_NC} ${failed_test}"
         done
         echo ""
         echo -e "${COLOR_RED}测试结果: 失败${COLOR_NC}"
@@ -356,11 +351,9 @@ show_test_summary() {
 }
 
 # ==============================================================================
-# 测试运行器
-# ==============================================================================
+# 测试运行�?# ==============================================================================
 
-# 运行所有测试
-run_all_tests() {
+# 运行所有测�?run_all_tests() {
     echo -e "${COLOR_CYAN}========================================${COLOR_NC}"
     echo -e "${COLOR_CYAN}Z-Panel Pro 单元测试${COLOR_NC}"
     echo -e "${COLOR_CYAN}========================================${COLOR_NC}"
@@ -368,8 +361,7 @@ run_all_tests() {
     # 导入测试框架
     source "${TEST_DIR}/test_runner.sh"
 
-    # 运行所有测试文件
-    local test_files=(
+    # 运行所有测试文�?    local test_files=(
         "${TEST_DIR}/test_utils.sh"
         "${TEST_DIR}/test_error_handler.sh"
         "${TEST_DIR}/test_strategy.sh"
@@ -386,8 +378,7 @@ run_all_tests() {
 }
 
 # ==============================================================================
-# 主程序
-# ==============================================================================
+# 主程�?# ==============================================================================
 
 main() {
     local test_file="${1:-}"
@@ -397,14 +388,12 @@ main() {
         if [[ -f "${TEST_DIR}/${test_file}" ]]; then
             source "${TEST_DIR}/${test_file}"
         else
-            echo -e "${COLOR_RED}错误: 测试文件不存在: ${test_file}${COLOR_NC}"
+            echo -e "${COLOR_RED}错误: 测试文件不存�? ${test_file}${COLOR_NC}"
             exit 1
         fi
     else
-        # 运行所有测试
-        run_all_tests
+        # 运行所有测�?        run_all_tests
     fi
 }
 
-# 运行主程序
-main "$@"
+# 运行主程�?main "$@"
