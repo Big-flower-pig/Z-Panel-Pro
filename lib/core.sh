@@ -29,8 +29,6 @@ readonly RUN_DIR="${INSTALL_DIR}/run"
 # LIB_DIR: 如果未定义则使用脚本所在目录
 if [[ -z "${LIB_DIR}" ]]; then
     readonly LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-else
-    readonly LIB_DIR="${LIB_DIR}"
 fi
 
 # ==============================================================================
