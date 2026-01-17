@@ -40,7 +40,7 @@ shopt -s nullglob
 # 全局配置
 # ============================================================================
 
-readonly VERSION="5.0.0-Pro"
+readonly SCRIPT_VERSION="5.0.0-Pro"
 readonly BUILD_DATE="2026-01-17"
 readonly SCRIPT_NAME="Z-Panel Pro 内存优化"
 
@@ -704,7 +704,7 @@ create_backup() {
 
     cat > "$backup_path/info.txt" <<EOF
 backup_time=$timestamp
-backup_version=$VERSION
+backup_version=$SCRIPT_VERSION
 distro=$CURRENT_DISTRO
 distro_version=$CURRENT_VERSION
 strategy=$STRATEGY_MODE
@@ -1461,7 +1461,7 @@ show_monitor() {
         clear
 
         echo -e "${CYAN}╔══════════════════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║${WHITE}         Z-Panel Pro 实时监控面板 v${VERSION}        ${CYAN}║${NC}"
+        echo -e "${CYAN}║${WHITE}         Z-Panel Pro 实时监控面板 v${SCRIPT_VERSION}        ${CYAN}║${NC}"
         echo -e "${CYAN}╠══════════════════════════════════════════════════════╣${NC}"
         printf "${CYAN}║${NC} 系统内存: ${WHITE}%4dMB${NC} | CPU: ${WHITE}%d核心${NC} | 模式: ${YELLOW}%s${NC} ${CYAN}║${NC}\n" "$TOTAL_MEMORY_MB" "$CPU_CORES" "$STRATEGY_MODE"
         echo -e "${CYAN}╠══════════════════════════════════════════════════════╣${NC}"
@@ -1540,7 +1540,7 @@ show_status() {
     clear
 
     echo -e "${CYAN}========================================${NC}"
-    echo -e "${CYAN}  Z-Panel Pro 系统状态 ${VERSION}${NC}"
+    echo -e "${CYAN}  Z-Panel Pro 系统状态 ${SCRIPT_VERSION}${NC}"
     echo -e "${CYAN}========================================${NC}\n"
 
     echo -e "${WHITE}系统信息:${NC}"
@@ -1606,7 +1606,7 @@ show_main_menu() {
     clear
 
     echo -e "${CYAN}╔══════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${WHITE}           Z-Panel Pro v${VERSION} 主控菜单              ${CYAN}║${NC}"
+    echo -e "${CYAN}║${WHITE}           Z-Panel Pro v${SCRIPT_VERSION} 主控菜单              ${CYAN}║${NC}"
     echo -e "${CYAN}╠══════════════════════════════════════════════════════╣${NC}"
     printf "${CYAN}║${NC} 检测到系统: ${YELLOW}RAM:%dMB${NC} | ${YELLOW}CPU:%d Cores${NC} | ${YELLOW}%s${NC} " "$TOTAL_MEMORY_MB" "$CPU_CORES" "$CURRENT_DISTRO $CURRENT_VERSION"
     printf "%*s${CYAN}║${NC}\n" $((50 - ${#CURRENT_DISTRO} - ${#CURRENT_VERSION} - ${#TOTAL_MEMORY_MB} - ${#CPU_CORES} - 10)) ""
