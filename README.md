@@ -96,6 +96,8 @@ curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/hea
 
 ```bash
 # 方法1: 克隆完整仓库（推荐）
+# 如果目录已存在，先删除或使用其他路径
+rm -rf /opt/Z-Panel-Pro
 git clone https://github.com/Big-flower-pig/Z-Panel-Pro.git /opt/Z-Panel-Pro
 cd /opt/Z-Panel-Pro
 ./Z-Panel.sh
@@ -108,7 +110,11 @@ wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/mai
 bash lightweight-install.sh
 ```
 
-**注意**: 轻量级安装脚本会先安装基础依赖，然后需要克隆完整仓库才能运行完整功能。
+**注意**:
+
+- 轻量级安装脚本会先安装基础依赖，然后需要克隆完整仓库才能运行完整功能
+- 如果 `/opt/Z-Panel-Pro` 目录已存在，请先删除或使用其他安装路径
+- 所有命令都需要root权限
 
 ### 标准模式安装
 
