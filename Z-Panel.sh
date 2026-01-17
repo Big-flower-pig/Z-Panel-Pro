@@ -304,7 +304,7 @@ string_display_width() {
         if [[ "$in_escape" == true ]]; then
             escape_seq+="$char"
             # 检查转义序列是否结束（CSI 序列以 [a-zA-Z@-^`] 结束）
-            if [[ "$char" =~ [a-zA-Z@-\^`] ]]; then
+            if [[ "$char" =~ [a-zA-Z@-^] ]] || [[ "$char" == '`' ]]; then
                 in_escape=false
                 escape_seq=""
             fi
@@ -703,7 +703,7 @@ safe_source() {
     fi
 
     # 检查是否有命令执行、重定向等危险操作（排除 $VAR 引用）
-    if grep -qE '`|\$\([^)]*\)|>|<|&|;' "$file"; then
+    if grep -qE '\`|\\\$\\([^)]*\)|>|<|&|;' "$file"; then
         log error "配置文件包含危险字符: $file"
         return 1
     fi
