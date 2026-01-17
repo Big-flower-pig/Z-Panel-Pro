@@ -1,16 +1,13 @@
 #!/bin/bash
-
-# Make pipes fail on first failed command, keep predictable locale and
-# enable nullglob to avoid literal globs when none match.
 set -o pipefail
 export LC_ALL=C
 shopt -s nullglob
 
 ################################################################################
-# Z-Panel Pro - 分级内存智能优化系统
+# Z-Panel Pro - 分级内存智能优化系统 (重构版)
 #
 # @description    专注于 ZRAM 压缩内存和系统虚拟内存的深度优化
-# @version       5.0.0-Pro
+# @version       6.0.0-Refactored
 # @author        Z-Panel Team
 # @license       MIT
 # @copyright     2026
@@ -29,23 +26,18 @@ shopt -s nullglob
 #                - 日志管理系统
 #                - 备份与回滚机制
 #
-# @usage         sudo bash z-panel.sh
+# @usage         sudo bash Z-Panel.sh
 # @requirements  - Bash 4.0+
 #                - Root privileges
 #                - Linux kernel 3.0+
 ################################################################################
 
-# 加载共享函数库
-LIB_DIR="/opt/z-panel/lib"
-if [[ -f "$LIB_DIR/common.sh" ]]; then
-    source "$LIB_DIR/common.sh"
-fi
-
 # ============================================================================
-# 全局配置
+# 核心配置模块 (Core)
 # ============================================================================
 
-readonly SCRIPT_VERSION="5.0.0-Pro"
+# 版本信息
+readonly SCRIPT_VERSION="6.0.0-Refactored"
 readonly BUILD_DATE="2026-01-17"
 readonly SCRIPT_NAME="Z-Panel Pro 内存优化"
 
@@ -53,29 +45,14 @@ readonly SCRIPT_NAME="Z-Panel Pro 内存优化"
 readonly LOCK_FILE="/tmp/z-panel.lock"
 readonly LOCK_FD=200
 
-# 界面配置
-declare -g USE_NERD_FONT=false
-declare -g ICON_SUCCESS=""
-declare -g ICON_ERROR=""
-declare -g ICON_WARNING=""
-declare -g ICON_INFO=""
-declare -g ICON_CPU=""
-declare -g ICON_RAM=""
-declare -g ICON_DISK=""
-declare -g ICON_SWAP=""
-declare -g ICON_ZRAM=""
-declare -g ICON_GEAR=""
-declare -g ICON_SHIELD=""
-declare -g ICON_CHART=""
-declare -g ICON_TRASH=""
-declare -g ICON_ROCKET=""
-declare -g ICON_TOOLS=""
-
 # 目录配置
 readonly INSTALL_DIR="/opt/z-panel"
 readonly CONF_DIR="$INSTALL_DIR/conf"
 readonly LOG_DIR="$INSTALL_DIR/logs"
 readonly BACKUP_DIR="$INSTALL_DIR/backup"
+readonly LIB_DIR="$INSTALL_DIR/lib"
+
+# 配置文件路径
 readonly ZRAM_CONFIG_FILE="$CONF_DIR/zram.conf"
 readonly KERNEL_CONFIG_FILE="$CONF_DIR/kernel.conf"
 readonly STRATEGY_CONFIG_FILE="$CONF_DIR/strategy.conf"
@@ -92,19 +69,60 @@ readonly MAGENTA='\033[0;35m'
 readonly PURPLE='\033[0;35m'
 readonly NC='\033[0m'
 
-# 日志配置
-declare -g LOG_MAX_SIZE_MB=50
-declare -g LOG_RETENTION_DAYS=30
+# UI配置
+readonly UI_WIDTH=62
 
-# 进度条和压缩比阈值常量
+# 进度条阈值
 readonly PROGRESS_THRESHOLD_CRITICAL=90
 readonly PROGRESS_THRESHOLD_HIGH=70
 readonly PROGRESS_THRESHOLD_MEDIUM=50
+
+# 压缩比阈值
 readonly COMPRESSION_RATIO_EXCELLENT=3.0
 readonly COMPRESSION_RATIO_GOOD=2.0
 readonly COMPRESSION_RATIO_FAIR=1.5
 
-# ZRAM设备缓存
+# 核心内核参数列表（用于循环处理）
+readonly KERNEL_PARAMS=(
+    "vm.swappiness"
+    "vm.vfs_cache_pressure"
+    "vm.page-cluster"
+    "vm.dirty_ratio"
+    "vm.dirty_background_ratio"
+)
+
+# 全局状态变量
+declare -g ZRAM_ENABLED=false
+declare -g DYNAMIC_MODE=false
+declare -g STRATEGY_MODE="balance"
+declare -g USE_NERD_FONT=false
+
+# 图标变量
+declare -g ICON_SUCCESS=""
+declare -g ICON_ERROR=""
+declare -g ICON_WARNING=""
+declare -g ICON_INFO=""
+declare -g ICON_CPU=""
+declare -g ICON_RAM=""
+declare -g ICON_DISK=""
+declare -g ICON_SWAP=""
+declare -g ICON_ZRAM=""
+declare -g ICON_GEAR=""
+declare -g ICON_SHIELD=""
+declare -g ICON_CHART=""
+declare -g ICON_TRASH=""
+declare -g ICON_ROCKET=""
+declare -g ICON_TOOLS=""
+
+# 缓存变量
+declare -g CACHE_MEM_TOTAL=0
+declare -g CACHE_MEM_USED=0
+declare -g CACHE_MEM_AVAIL=0
+declare -g CACHE_BUFF_CACHE=0
+declare -g CACHE_SWAP_TOTAL=0
+declare -g CACHE_SWAP_USED=0
+declare -g CACHE_LAST_UPDATE=0
+declare -g CACHE_TTL=3
 declare -g _ZRAM_ENABLED_CACHE=""
 declare -g _ZRAM_DEVICE_CACHE=""
 
@@ -115,68 +133,45 @@ declare -g PACKAGE_MANAGER=""
 declare -g TOTAL_MEMORY_MB=0
 declare -g CPU_CORES=0
 
-# 状态变量
-declare -g ZRAM_ENABLED=false
-declare -g DYNAMIC_MODE=false
-declare -g STRATEGY_MODE="balance"  # conservative, balance, aggressive
-
-# 缓存变量（用于监控面板）
-declare -g CACHE_MEM_TOTAL=0
-declare -g CACHE_MEM_USED=0
-declare -g CACHE_MEM_AVAIL=0
-declare -g CACHE_BUFF_CACHE=0
-declare -g CACHE_SWAP_TOTAL=0
-declare -g CACHE_SWAP_USED=0
-declare -g CACHE_LAST_UPDATE=0
-declare -g CACHE_TTL=3  # 缓存有效期（秒）
+# 日志配置
+declare -g LOG_MAX_SIZE_MB=50
+declare -g LOG_RETENTION_DAYS=30
 
 # ============================================================================
-# 文件锁功能
+# 文件锁模块 (Lock)
 # ============================================================================
 
-# 获取文件锁
-# @return 0 表示成功获取锁，1 表示失败
 acquire_lock() {
-    # 尝试打开锁文件
     if ! eval "exec $LOCK_FD>\"$LOCK_FILE\""; then
-        log error "无法创建锁文件: $LOCK_FILE"
+        echo "[ERROR] 无法创建锁文件: $LOCK_FILE"
         return 1
     fi
 
-    # 尝试获取排他锁（非阻塞模式）
     if ! flock -n $LOCK_FD; then
         local pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "unknown")
-        log error "脚本已在运行中 (PID: $pid)"
-        log error "如需重新启动，请先运行: rm -f $LOCK_FILE"
+        echo "[ERROR] 脚本已在运行中 (PID: $pid)"
+        echo "[ERROR] 如需重新启动，请先运行: rm -f $LOCK_FILE"
         return 1
     fi
 
-    # 将当前 PID 写入锁文件
     echo $$ > "$LOCK_FILE"
-
-    log info "已获取文件锁 (PID: $$)"
     return 0
 }
 
-# 释放文件锁
 release_lock() {
     if flock -u $LOCK_FD 2>/dev/null; then
-        log info "已释放文件锁"
         rm -f "$LOCK_FILE" 2>/dev/null
     fi
 }
 
 # ============================================================================
-# Nerd Font 检测和图标系统
+# 图标检测模块 (Icons)
 # ============================================================================
 
-# 检测系统是否支持 Nerd Font
-# 检查多个来源以确定 Nerd Font 是否可用
-# @return 0 表示支持 Nerd Font，1 表示不支持
 detect_nerd_font() {
     local has_nerd_font=false
 
-    # 方法 1: 检查字体配置文件
+    # 检查字体配置文件
     if [[ -f ~/.config/fontconfig/fonts.conf ]] || [[ -f ~/.fonts.conf ]]; then
         local font_file="${HOME}/.config/fontconfig/fonts.conf"
         [[ -f "$font_file" ]] || font_file="${HOME}/.fonts.conf"
@@ -185,7 +180,7 @@ detect_nerd_font() {
         fi
     fi
 
-    # 方法 2: 检查常见 Nerd Font 安装路径
+    # 检查字体目录
     local font_dirs=(
         "/usr/share/fonts"
         "/usr/local/share/fonts"
@@ -195,16 +190,15 @@ detect_nerd_font() {
 
     for dir in "${font_dirs[@]}"; do
         if [[ -d "$dir" ]]; then
-            if find "$dir" -iname "*nerd*" -o -iname "*hack*nerd*" -o -iname "*fira*nerd*" 2>/dev/null | grep -q .; then
+            if find "$dir" -iname "*nerd*" 2>/dev/null | grep -q .; then
                 has_nerd_font=true
                 break
             fi
         fi
     done
 
-    # 方法 3: 检查环境变量
+    # 检查终端环境
     if [[ -n "${TERM_PROGRAM:-}" ]] && [[ "${TERM_PROGRAM:-}" == "iTerm.app" ]]; then
-        # iTerm2 通常支持 Nerd Font
         has_nerd_font=true
     fi
 
@@ -214,29 +208,20 @@ detect_nerd_font() {
         fi
     fi
 
-    # 方法 4: 检查终端能力（尝试打印 Nerd Font 图标）
+    # 检查终端宽度
     if command -v tput &> /dev/null; then
         local cols=$(tput cols 2>/dev/null || echo 80)
         if [[ $cols -gt 80 ]]; then
-            # 宽终端更可能支持 Nerd Font
             has_nerd_font=true
         fi
-    fi
-
-    # 方法 5: 检查 LC_CTYPE 是否支持 UTF-8
-    if [[ "${LC_ALL:-${LC_CTYPE:-}}" =~ UTF-8 ]]; then
-        has_nerd_font=true
     fi
 
     $has_nerd_font && return 0 || return 1
 }
 
-# 初始化图标系统
-# 根据检测到的环境设置合适的图标
 init_icons() {
     if detect_nerd_font; then
         USE_NERD_FONT=true
-        # Nerd Font 图标
         ICON_SUCCESS="✓"
         ICON_ERROR="✗"
         ICON_WARNING="⚠"
@@ -254,7 +239,6 @@ init_icons() {
         ICON_TOOLS="🛠️"
     else
         USE_NERD_FONT=false
-        # ASCII 图标（默认）
         ICON_SUCCESS="[OK]"
         ICON_ERROR="[!!]"
         ICON_WARNING="[!]"
@@ -274,153 +258,124 @@ init_icons() {
 }
 
 # ============================================================================
-# 输出格式化工具（支持中文字符宽度）
+# UI引擎模块 (UI Engine)
 # ============================================================================
 
-# 计算字符串的显示宽度（中文字符按2个宽度计算，Emoji 按实际显示宽度）
-# 正确处理 ANSI 颜色控制码
-# @param str 输入字符串
-# @return 显示宽度
-string_display_width() {
-    local str="$1"
-    local width=0
-    local i=0
-    local len=${#str}
-    local in_escape=false
-    local escape_seq=""
-
-    while [[ $i -lt $len ]]; do
-        local char="${str:$i:1}"
-
-        # 检测 ANSI 转义序列开始
-        if [[ "$char" == $'\033' ]] || [[ "$char" == $'\e' ]]; then
-            in_escape=true
-            escape_seq="$char"
-            ((i++))
-            continue
-        fi
-
-        # 在转义序列中
-        if [[ "$in_escape" == true ]]; then
-            escape_seq+="$char"
-            # 检查转义序列是否结束（CSI 序列以 [a-zA-Z@-^`] 结束）
-            if [[ "$char" =~ [a-zA-Z@-^] ]] || [[ "$char" == '`' ]]; then
-                in_escape=false
-                escape_seq=""
-            fi
-            ((i++))
-            continue
-        fi
-
-        # 计算可见字符宽度
-        # 获取字符的字节长度
-        local char_bytes=$(printf '%s' "$char" | wc -c)
-
-        # 判断字符类型
-        if [[ $char_bytes -gt 1 ]]; then
-            # 多字节字符
-            # 检查是否为 Emoji（通常占用 2 个显示宽度）
-            # Emoji 的 Unicode 范围：1F600-1F64F (表情符号), 1F300-1F5FF (符号), 1F680-1F6FF (交通), 1F700-1F77F (炼金术), 1F780-1F7FF (几何), 1F800-1F8FF (补充), 1F900-1F9FF (补充符号), 1FA00-1FA6F (棋类), 2600-26FF (符号), 2700-27BF (装饰符号)
-            local char_code=$(printf '%d' "'$char")
-
-            # 检查是否为 Emoji 区域（通过字符编码判断）
-            # 注意：这个方法不完美，但对于常见 Emoji 有效
-            if [[ $char_bytes -ge 4 ]]; then
-                # 大部分 Emoji 是 4 字节 UTF-8 编码
-                ((width += 2))
-            elif [[ $char_bytes -eq 3 ]]; then
-                # 3 字节可能是中文（宽度 2）或某些 Emoji
-                # 通过检查字符值判断
-                if [[ $char_code -ge 0x4E00 ]] && [[ $char_code -le 0x9FFF ]]; then
-                    # CJK 统一表意文字
-                    ((width += 2))
-                else
-                    ((width += 1))
-                fi
-            else
-                ((width += 2))
-            fi
-        else
-            # 单字节字符占用 1 个显示宽度
-            ((width += 1))
-        fi
-        ((i++))
-    done
-
-    echo $width
+ui_line() {
+    printf "${CYAN}├$(printf '%.0s─' $(seq 1 $UI_WIDTH))┤${NC}\n";
 }
 
-# 左对齐字符串到指定宽度（考虑中文字符宽度）
-# @param str 输入字符串
-# @param width 目标宽度
-# @return 填充后的字符串
-pad_left() {
-    local str="$1"
-    local width=$2
-    local current_width=$(string_display_width "$str")
-    local padding=$((width - current_width))
+ui_top() {
+    printf "${CYAN}┌$(printf '%.0s─' $(seq 1 $UI_WIDTH))┐${NC}\n";
+}
 
-    if [[ $padding -gt 0 ]]; then
-        printf '%s%*s' "$str" $padding ''
+ui_bot() {
+    printf "${CYAN}└$(printf '%.0s─' $(seq 1 $UI_WIDTH))┘${NC}\n";
+}
+
+ui_row() {
+    local text="$1" color="${2:-$NC}"
+    local plain_text; plain_text=$(echo -e "$text" | sed 's/\x1b\[[0-9;]*m//g')
+    local pad=$(( UI_WIDTH - ${#plain_text} - 2 ))
+    printf "${CYAN}│${NC} ${color}${text}${NC}$(printf '%*s' $pad '')${CYAN}│${NC}\n"
+}
+
+ui_header() {
+    ui_top
+    local title=" $1 "
+    local pad=$(( (UI_WIDTH - ${#title}) / 2 ))
+    printf "${CYAN}│${NC}$(printf '%*s' $pad '')${WHITE}${title}${NC}$(printf '%*s' $((UI_WIDTH-pad-${#title})) '')${CYAN}│${NC}\n"
+    ui_line
+}
+
+ui_section() {
+    ui_line
+    ui_row " ${WHITE}$1${NC}" "$WHITE"
+    ui_line
+}
+
+ui_menu_item() {
+    local num="$1"
+    local text="$2"
+    local item="${GREEN}${num}.${NC} ${text}"
+    ui_row "  $item"
+}
+
+show_progress_bar() {
+    local current=$1
+    local total=$2
+    local width=${3:-46}
+    local label=${4:-""}
+
+    [[ -z "$label" ]] || echo -ne "${WHITE}$label${NC} "
+
+    [[ "$total" -eq 0 ]] && total=1
+    [[ "$current" -gt "$total" ]] && current=$total
+
+    local filled=$((current * width / total)) || true
+    local empty=$((width - filled)) || true
+    local percent=$((current * 100 / total)) || true
+
+    local bar_color="$GREEN"
+    if [[ $percent -ge $PROGRESS_THRESHOLD_CRITICAL ]]; then
+        bar_color="$RED"
+    elif [[ $percent -ge $PROGRESS_THRESHOLD_HIGH ]]; then
+        bar_color="$YELLOW"
+    elif [[ $percent -ge $PROGRESS_THRESHOLD_MEDIUM ]]; then
+        bar_color="$CYAN"
+    fi
+
+    echo -ne "${WHITE}[${NC}"
+    local filled_bar=$(printf "%${filled}s" '' | tr ' ' '█')
+    local empty_bar=$(printf "%${empty}s" '' | tr ' ' '░')
+    echo -ne "${bar_color}${filled_bar}${NC}${WHITE}${empty_bar}${NC}]${NC} "
+
+    if [[ $percent -ge 90 ]]; then
+        echo -e "${RED}${percent}%${NC}"
+    elif [[ $percent -ge 70 ]]; then
+        echo -e "${YELLOW}${percent}%${NC}"
+    elif [[ $percent -ge 50 ]]; then
+        echo -e "${CYAN}${percent}%${NC}"
     else
-        printf '%s' "$str"
+        echo -e "${GREEN}${percent}%${NC}"
     fi
 }
 
-# 右对齐字符串到指定宽度（考虑中文字符宽度）
-# @param str 输入字符串
-# @param width 目标宽度
-# @return 填充后的字符串
-pad_right() {
-    local str="$1"
-    local width=$2
-    local current_width=$(string_display_width "$str")
-    local padding=$((width - current_width))
+show_compression_chart() {
+    local ratio=$1
+    local width=${2:-46}
 
-    if [[ $padding -gt 0 ]]; then
-        printf '%*s%s' $padding '' "$str"
+    local filled=0
+    local bar_color="$GREEN"
+
+    if (( $(awk "BEGIN {print ($ratio >= $COMPRESSION_RATIO_EXCELLENT)}") )); then
+        filled=$((width * 100 / 100)) || true
+        bar_color="$GREEN"
+    elif (( $(awk "BEGIN {print ($ratio >= $COMPRESSION_RATIO_GOOD)}") )); then
+        filled=$((width * 75 / 100)) || true
+        bar_color="$CYAN"
+    elif (( $(awk "BEGIN {print ($ratio >= $COMPRESSION_RATIO_FAIR)}") )); then
+        filled=$((width * 50 / 100)) || true
+        bar_color="$YELLOW"
     else
-        printf '%s' "$str"
+        filled=$((width * 25 / 100)) || true
+        bar_color="$RED"
     fi
+
+    local empty=$((width - filled))
+
+    echo -ne "${CYAN}压缩比: ${ratio}x ${NC}"
+
+    echo -ne "${WHITE}[${NC}"
+    local filled_bar=$(printf "%${filled}s" '' | tr ' ' '█')
+    local empty_bar=$(printf "%${empty}s" '' | tr ' ' '░')
+    echo -e "${bar_color}${filled_bar}${NC}${WHITE}${empty_bar}${NC}]${NC}"
 }
-
-# 居中对齐字符串到指定宽度（考虑中文字符宽度）
-# @param str 输入字符串
-# @param width 目标宽度
-# @return 填充后的字符串
-pad_center() {
-    local str="$1"
-    local width=$2
-    local current_width=$(string_display_width "$str")
-    local padding=$((width - current_width))
-
-    if [[ $padding -gt 0 ]]; then
-        local left_pad=$((padding / 2))
-        local right_pad=$((padding - left_pad))
-        printf '%*s%s%*s' $left_pad '' "$str" $right_pad ''
-    else
-        printf '%s' "$str"
-    fi
-}
-
-# 使用 printf 格式化表格行（推荐用于固定格式的表格布局）
-# @param format printf 格式字符串
-# @param ... 参数列表
-# @return 格式化后的字符串
-format_table_row() {
-    local format="$1"
-    shift
-    printf "$format" "$@"
-}
-
 
 # ============================================================================
-# 工具函数
+# 日志模块 (Logger)
 # ============================================================================
 
-# 日志记录函数
-# @param level 日志级别 (info/warn/error/debug)
-# @param message 日志消息
 log() {
     local level=$1
     shift
@@ -453,22 +408,16 @@ log() {
 
     echo -e "${color}${timestamp}${prefix}${NC} ${message}"
 
-    # 写入日志文件
     if [[ -d "$LOG_DIR" ]]; then
         echo "${timestamp}${prefix} ${message}" >> "$LOG_DIR/zpanel_$(date +%Y%m%d).log"
     fi
 }
 
-# 暂停等待用户输入
 pause() {
     echo -ne "${CYAN}按 Enter 继续...${NC}"
     read -r
 }
 
-# 确认对话框
-# @param message 提示消息
-# @param default 默认值 (Y/N)
-# @return 0 表示确认，1 表示拒绝
 confirm() {
     local message="$1"
     local default="${2:-N}"
@@ -491,12 +440,35 @@ confirm() {
 }
 
 # ============================================================================
-# 工具检查函数
+# 工具函数模块 (Utils)
 # ============================================================================
 
-# 检查命令是否存在
-# @param cmd 命令名称
-# @return 0 表示存在，1 表示不存在
+calculate_percentage() {
+    local used=$1
+    local total=$2
+
+    if [[ -z "$total" ]] || [[ "$total" -eq 0 ]]; then
+        echo 0
+        return
+    fi
+
+    if [[ -z "$used" ]]; then
+        used=0
+    fi
+
+    echo "$((used * 100 / total))"
+}
+
+validate_number() {
+    local var=$1
+    [[ "$var" =~ ^-?[0-9]+$ ]]
+}
+
+validate_positive_int() {
+    local var=$1
+    [[ "$var" =~ ^[0-9]+$ ]] && [[ $var -gt 0 ]]
+}
+
 check_command() {
     local cmd=$1
     if ! command -v "$cmd" &> /dev/null; then
@@ -506,37 +478,30 @@ check_command() {
     return 0
 }
 
-# 检查脚本依赖
-# @return 0 表示所有依赖都已满足，1 表示缺少依赖
 check_dependencies() {
     local missing=()
     local warnings=()
 
-    # 检查基础命令
     for cmd in awk sed grep; do
         if ! command -v "$cmd" &> /dev/null; then
             missing+=("$cmd")
         fi
     done
 
-    # 检查关键系统工具
     for cmd in modprobe swapon mkswap; do
         if ! command -v "$cmd" &> /dev/null; then
             missing+=("$cmd")
         fi
     done
 
-    # 检查 zramctl（警告但不阻止）
     if ! command -v zramctl &> /dev/null; then
         warnings+=("zramctl")
     fi
 
-    # 检查 sysctl（警告但不阻止）
     if ! command -v sysctl &> /dev/null; then
         warnings+=("sysctl")
     fi
 
-    # 输出缺失的依赖
     if [[ ${#missing[@]} -gt 0 ]]; then
         log error "缺少必需命令: ${missing[*]}"
         echo ""
@@ -548,7 +513,6 @@ check_dependencies() {
         return 1
     fi
 
-    # 输出警告
     if [[ ${#warnings[@]} -gt 0 ]]; then
         log warn "缺少可选命令: ${warnings[*]}"
         log warn "某些功能可能无法正常使用"
@@ -557,22 +521,46 @@ check_dependencies() {
     return 0
 }
 
+safe_source() {
+    local file=$1
+    local pattern='^[A-Z_][A-Z0-9_]*='
+
+    if [[ ! -f "$file" ]]; then
+        return 1
+    fi
+
+    if ! grep -qE "^($pattern|#.*$|$)" "$file"; then
+        log error "配置文件包含不安全内容: $file"
+        return 1
+    fi
+
+    if grep -qE '`|\$\([^)]*\)|>|<|&|;' "$file"; then
+        log error "配置文件包含危险字符: $file"
+        return 1
+    fi
+
+    local file_perms=$(stat -c "%a" "$file" 2>/dev/null || stat -f "%OLp" "$file" 2>/dev/null || echo "000")
+    if [[ "$file_perms" != "600" ]] && [[ "$file_perms" != "400" ]]; then
+        log warn "配置文件权限不安全: $file (当前: $file_perms, 建议: 600)"
+        chmod 600 "$file" 2>/dev/null || true
+    fi
+
+    source "$file"
+    return 0
+}
+
 # ============================================================================
-# 缓存管理
+# 缓存管理模块 (Cache)
 # ============================================================================
 
-# 更新内存信息缓存
-# 减少系统调用次数，提高性能
 update_cache() {
     local current_time=$(date +%s)
     local cache_age=$((current_time - CACHE_LAST_UPDATE))
 
-    # 如果缓存未过期，直接返回
     if [[ $cache_age -lt $CACHE_TTL ]]; then
         return 0
     fi
 
-    # 一次性获取所有内存信息，避免重复调用free
     local mem_info=$(free -m | awk '/^Mem:/ {print $2, $3, $7, $6}')
     local swap_info=$(free -m | awk '/Swap:/ {print $2, $3}')
 
@@ -581,7 +569,6 @@ update_cache() {
     CACHE_LAST_UPDATE=$current_time
 }
 
-# 清空内存信息缓存
 clear_cache() {
     CACHE_MEM_TOTAL=0
     CACHE_MEM_USED=0
@@ -593,12 +580,9 @@ clear_cache() {
 }
 
 # ============================================================================
-# 内存信息获取（统一接口）
+# 数据采集模块 (Data Collector)
 # ============================================================================
 
-# 获取内存信息
-# @param use_cache 是否使用缓存 (true/false)
-# @return 输出格式: "total used avail buff_cache" (单位: MB)
 get_memory_info() {
     local use_cache=${1:-true}
 
@@ -610,9 +594,6 @@ get_memory_info() {
     fi
 }
 
-# 获取交换分区信息
-# @param use_cache 是否使用缓存 (true/false)
-# @return 输出格式: "total used" (单位: MB)
 get_swap_info() {
     local use_cache=${1:-true}
 
@@ -624,15 +605,28 @@ get_swap_info() {
     fi
 }
 
-# 获取 ZRAM 使用情况
-# @return 输出格式: "total used" (单位: MB)
+is_zram_enabled() {
+    if [[ -z "$_ZRAM_ENABLED_CACHE" ]]; then
+        if swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
+            _ZRAM_ENABLED_CACHE=true
+        else
+            _ZRAM_ENABLED_CACHE=false
+        fi
+    fi
+    [[ "$_ZRAM_ENABLED_CACHE" == "true" ]]
+}
+
+clear_zram_cache() {
+    _ZRAM_ENABLED_CACHE=""
+    _ZRAM_DEVICE_CACHE=""
+}
+
 get_zram_usage() {
     if ! is_zram_enabled; then
         echo "0 0"
         return
     fi
 
-    # 一次性获取所有 ZRAM 信息，减少系统调用
     local zram_info=$(swapon --show=SIZE,USED --noheadings 2>/dev/null | grep zram | head -1)
 
     if [[ -z "$zram_info" ]]; then
@@ -640,7 +634,6 @@ get_zram_usage() {
         return
     fi
 
-    # 解析并转换单位为 MB（使用单次 awk 调用）
     local zram_total=$(echo "$zram_info" | awk '{
         size = $1
         unit = substr($1, length($1))
@@ -667,609 +660,56 @@ get_zram_usage() {
     echo "$zram_total $zram_used"
 }
 
-# ============================================================================
-# 变量校验函数
-# ============================================================================
-
-# 验证变量是否为有效数字
-# @param var 要验证的变量值
-# @return 0 表示有效，1 表示无效
-validate_number() {
-    local var=$1
-    [[ "$var" =~ ^-?[0-9]+$ ]]
-}
-
-# 验证变量是否为正整数
-# @param var 要验证的变量值
-# @return 0 表示有效，1 表示无效
-validate_positive_int() {
-    local var=$1
-    [[ "$var" =~ ^[0-9]+$ ]] && [[ $var -gt 0 ]]
-}
-
-# ============================================================================
-# 安全的配置加载
-# ============================================================================
-
-# 安全地加载配置文件
-# 防止命令注入和恶意代码执行
-# 直接在当前 Shell 环境中加载，确保配置变量可被主脚本读取
-# @param file 配置文件路径
-# @return 0 表示成功，1 表示失败
-safe_source() {
-    local file=$1
-    local pattern='^[A-Z_][A-Z0-9_]*='
-
-    if [[ ! -f "$file" ]]; then
-        return 1
-    fi
-
-    # 更严格的验证：只允许变量赋值和注释
-    if ! grep -qE "^($pattern|#.*$|$)" "$file"; then
-        log error "配置文件包含不安全内容: $file"
-        return 1
-    fi
-
-    # 检查是否有命令执行、重定向等危险操作（排除 $VAR 引用）
-    if grep -qE '`|\$\([^)]*\)|>|<|&|;' "$file"; then
-        log error "配置文件包含危险字符: $file"
-        return 1
-    fi
-
-    # 验证文件权限（只允许 root 读写）
-    local file_perms=$(stat -c "%a" "$file" 2>/dev/null || stat -f "%OLp" "$file" 2>/dev/null || echo "000")
-    if [[ "$file_perms" != "600" ]] && [[ "$file_perms" != "400" ]]; then
-        log warn "配置文件权限不安全: $file (当前: $file_perms, 建议: 600)"
-        chmod 600 "$file" 2>/dev/null || true
-    fi
-
-    # 直接在当前 Shell 环境中 source，确保配置变量生效
-    source "$file"
-
-    return 0
-}
-
-# ============================================================================
-# 安全的百分比计算函数
-# ============================================================================
-
-# 安全地计算百分比
-# 防止除零错误
-# @param used 已使用量
-# @param total 总量
-# @return 百分比值 (0-100)
-calculate_percentage() {
-    local used=$1
-    local total=$2
-
-    if [[ -z "$total" ]] || [[ "$total" -eq 0 ]]; then
-        echo 0
+get_zram_status() {
+    if ! command -v zramctl &> /dev/null; then
+        echo '{"enabled": false}'
         return
     fi
 
-    if [[ -z "$used" ]]; then
-        used=0
+    local zram_info=$(zramctl 2>/dev/null | tail -n +2)
+
+    if [[ -z "$zram_info" ]]; then
+        echo '{"enabled": false}'
+        return
     fi
 
-    echo "$((used * 100 / total))"
-}
+    local name disk_size data_size comp_size algo
+    read -r name disk_size data_size comp_size algo <<< "$zram_info"
 
-# ============================================================================
-# ZRAM设备管理函数
-# ============================================================================
-
-# 获取可用的 ZRAM 设备
-# 优先使用未启用的设备，如果没有则创建新设备
-# @return 设备名称 (如: zram0)
-get_available_zram_device() {
-    # 返回缓存的设备（如果存在）
-    if [[ -n "$_ZRAM_DEVICE_CACHE" ]]; then
-        echo "$_ZRAM_DEVICE_CACHE"
-        return 0
+    local compression_ratio="0"
+    if [[ -n "$data_size" ]] && [[ -n "$comp_size" ]] && [[ "$comp_size" != "0" ]]; then
+        compression_ratio=$(echo "$data_size $comp_size" | awk '{
+            data_num = $1
+            comp_num = $2
+            gsub(/[KMGT]/, "", data_num)
+            gsub(/[KMGT]/, "", comp_num)
+            if (comp_num > 0 && data_num > 0) {
+                printf "%.2f", data_num / comp_num
+            }
+        }')
     fi
 
-    # 查找可用的zram设备
-    for i in {0..15}; do
-        if [[ -e "/sys/block/zram$i" ]] && ! swapon --show=NAME | grep -q "zram$i"; then
-            _ZRAM_DEVICE_CACHE="zram$i"
-            echo "zram$i"
-            return 0
-        fi
-    done
-
-    # 如果没有可用设备，尝试创建新设备
-    if [[ -e /sys/class/zram-control/hot_add ]]; then
-        local device_num=$(cat /sys/class/zram-control/hot_add)
-        _ZRAM_DEVICE_CACHE="zram$device_num"
-        echo "zram$device_num"
-        return 0
-    fi
-
-    return 1
+    cat <<EOF
+{
+    "enabled": true,
+    "device": "$name",
+    "disk_size": "$disk_size",
+    "data_size": "$data_size",
+    "comp_size": "$comp_size",
+    "algorithm": "$algo",
+    "compression_ratio": "$compression_ratio"
 }
-
-# 检查 ZRAM 是否已启用
-# 使用缓存避免重复的系统调用
-# @return 0 表示已启用，1 表示未启用
-is_zram_enabled() {
-    if [[ -z "$_ZRAM_ENABLED_CACHE" ]]; then
-        if swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
-            _ZRAM_ENABLED_CACHE=true
-        else
-            _ZRAM_ENABLED_CACHE=false
-        fi
-    fi
-    [[ "$_ZRAM_ENABLED_CACHE" == "true" ]]
-}
-
-# 清空 ZRAM 状态缓存
-# 在 ZRAM 状态改变后调用此函数
-clear_zram_cache() {
-    _ZRAM_ENABLED_CACHE=""
-    _ZRAM_DEVICE_CACHE=""
-}
-
-# ============================================================================
-# 进度条和图表显示模块
-# ============================================================================
-
-# 显示进度条
-# @param current 当前进度
-# @param total 总进度
-# @param width 进度条宽度 (默认: 40)
-# @param label 进度条标签
-show_progress_bar() {
-    local current=$1
-    local total=$2
-    local width=${3:-40}
-    local label=${4:-""}
-
-    [[ -z "$label" ]] || echo -ne "${WHITE}$label${NC} "
-
-    # 防止除零错误
-    [[ "$total" -eq 0 ]] && total=1
-    [[ "$current" -gt "$total" ]] && current=$total
-
-    local filled=$((current * width / total)) || true
-    local empty=$((width - filled)) || true
-    local percent=$((current * 100 / total)) || true
-
-    # 更现代的进度条样式
-    local bar_color="$GREEN"
-    if [[ $percent -ge $PROGRESS_THRESHOLD_CRITICAL ]]; then
-        bar_color="$RED"
-    elif [[ $percent -ge $PROGRESS_THRESHOLD_HIGH ]]; then
-        bar_color="$YELLOW"
-    elif [[ $percent -ge $PROGRESS_THRESHOLD_MEDIUM ]]; then
-        bar_color="$CYAN"
-    fi
-
-    # 使用实心方块字符
-    echo -ne "${WHITE}[${NC}"
-    local filled_bar=$(printf "%${filled}s" '' | tr ' ' '█')
-    local empty_bar=$(printf "%${empty}s" '' | tr ' ' '░')
-    echo -ne "${bar_color}${filled_bar}${NC}${WHITE}${empty_bar}${NC}]${NC} "
-
-    # 百分比带颜色
-    if [[ $percent -ge 90 ]]; then
-        echo -e "${RED}${percent}%${NC}"
-    elif [[ $percent -ge 70 ]]; then
-        echo -e "${YELLOW}${percent}%${NC}"
-    elif [[ $percent -ge 50 ]]; then
-        echo -e "${CYAN}${percent}%${NC}"
-    else
-        echo -e "${GREEN}${percent}%${NC}"
-    fi
-}
-
-# 显示压缩比图表
-# @param ratio 压缩比
-# @param width 图表宽度 (默认: 30)
-show_compression_chart() {
-    local ratio=$1
-    local width=${2:-30}
-
-    # 更美观的压缩比显示
-    local filled=0
-    local bar_color="$GREEN"
-
-    # 使用 awk 进行浮点数比较
-    if (( $(awk "BEGIN {print ($ratio >= $COMPRESSION_RATIO_EXCELLENT)}") )); then
-        filled=$((width * 100 / 100)) || true
-        bar_color="$GREEN"
-    elif (( $(awk "BEGIN {print ($ratio >= $COMPRESSION_RATIO_GOOD)}") )); then
-        filled=$((width * 75 / 100)) || true
-        bar_color="$CYAN"
-    elif (( $(awk "BEGIN {print ($ratio >= $COMPRESSION_RATIO_FAIR)}") )); then
-        filled=$((width * 50 / 100)) || true
-        bar_color="$YELLOW"
-    else
-        filled=$((width * 25 / 100)) || true
-        bar_color="$RED"
-    fi
-
-    local empty=$((width - filled))
-
-    # 显示标签
-    echo -ne "${CYAN}压缩比: ${ratio}x ${NC}"
-
-    # 使用更现代的样式
-    echo -ne "${WHITE}[${NC}"
-    local filled_bar=$(printf "%${filled}s" '' | tr ' ' '█')
-    local empty_bar=$(printf "%${empty}s" '' | tr ' ' '░')
-    echo -e "${bar_color}${filled_bar}${NC}${WHITE}${empty_bar}${NC}]${NC}"
-}
-
-# 显示内存使用饼图
-# @param mem_used 已使用内存 (MB)
-# @param mem_total 总内存 (MB)
-show_memory_pie() {
-    local mem_used=$1
-    local mem_total=$2
-    local mem_avail=$((mem_total - mem_used)) || true
-    local used_percent=$((mem_used * 100 / mem_total)) || true
-    local avail_percent=$((100 - used_percent)) || true
-
-    echo -e "  ${YELLOW}■${NC} 已用: ${mem_used}MB (${YELLOW}${used_percent}%${NC})"
-    echo -e "  ${GREEN}■${NC} 可用: ${mem_avail}MB (${GREEN}${avail_percent}%${NC})"
-    echo -e "  ${WHITE}■${NC} 总量: ${mem_total}MB"
-}
-
-# ============================================================================
-# 日志管理模块
-# ============================================================================
-
-# 加载日志配置
-load_log_config() {
-    if [[ -f "$LOG_CONFIG_FILE" ]]; then
-        safe_source "$LOG_CONFIG_FILE" || true
-    fi
-}
-
-# 保存日志配置
-save_log_config() {
-    # 验证参数
-    [[ ! "$LOG_MAX_SIZE_MB" =~ ^[0-9]+$ ]] && LOG_MAX_SIZE_MB=50
-    [[ ! "$LOG_RETENTION_DAYS" =~ ^[0-9]+$ ]] && LOG_RETENTION_DAYS=30
-
-    cat > "$LOG_CONFIG_FILE" <<EOF
-# ============================================================================
-# Z-Panel Pro 日志配置
-# ============================================================================
-# 自动生成，请勿手动修改
-#
-# LOG_MAX_SIZE_MB: 单个日志文件最大大小（MB）
-# LOG_RETENTION_DAYS: 日志文件保留天数
-# ============================================================================
-
-LOG_MAX_SIZE_MB=$LOG_MAX_SIZE_MB
-LOG_RETENTION_DAYS=$LOG_RETENTION_DAYS
 EOF
 }
 
-# 日志管理菜单
-log_config_menu() {
-    load_log_config
-
-    while true; do
-        clear
-
-        echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-        echo -e "${CYAN}│${WHITE}$(pad_center "日志管理" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}│${WHITE}$(pad_left "  当前配置:" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  最大日志大小: ${GREEN}${LOG_MAX_SIZE_MB}MB${NC}$(pad_left "" 29)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  日志保留天数: ${GREEN}${LOG_RETENTION_DAYS}天${NC}$(pad_left "" 28)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}│${WHITE}$(pad_left "  操作选项:" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}1.${NC} 设置最大日志大小$(pad_left "" 33)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}2.${NC} 设置日志保留天数$(pad_left "" 33)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}3.${NC} 查看日志文件列表$(pad_left "" 31)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}4.${NC} 查看运行日志（分页）$(pad_left "" 28)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}5.${NC} 查看动态调整日志（分页）$(pad_left "" 24)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}6.${NC} 清理过期日志$(pad_left "" 36)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}0.${NC} 返回$(pad_left "" 46)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
-        echo ""
-        echo -ne "${WHITE}请选择 [0-6]: ${NC}"
-        read -r choice
-
-        case $choice in
-            1)
-                local valid=false
-                while [[ "$valid" == "false" ]]; do
-                    echo -ne "\n设置最大日志大小 (MB, 10-500): "
-                    read -r size
-                    if [[ "$size" =~ ^[0-9]+$ ]] && [[ $size -ge 10 ]] && [[ $size -le 500 ]]; then
-                        LOG_MAX_SIZE_MB=$size
-                        save_log_config
-                        echo -e "${GREEN}设置成功${NC}"
-                        valid=true
-                    else
-                        echo -e "${RED}无效输入，请输入 10-500 之间的数字${NC}"
-                    fi
-                done
-                pause
-                ;;
-            2)
-                local valid=false
-                while [[ "$valid" == "false" ]]; do
-                    echo -ne "\n设置日志保留天数 (1-365): "
-                    read -r days
-                    if [[ "$days" =~ ^[0-9]+$ ]] && [[ $days -ge 1 ]] && [[ $days -le 365 ]]; then
-                        LOG_RETENTION_DAYS=$days
-                        save_log_config
-                        echo -e "${GREEN}设置成功${NC}"
-                        valid=true
-                    else
-                        echo -e "${RED}无效输入，请输入 1-365 之间的数字${NC}"
-                    fi
-                done
-                pause
-                ;;
-            3)
-                clear
-                echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-                echo -e "${CYAN}│${WHITE}              日志文件列表${CYAN}                              │${NC}"
-                echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-                echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-
-                if [[ -d "$LOG_DIR" ]]; then
-                    echo -e "${CYAN}│${WHITE}  ZPanel 日志:${CYAN}                                             ${CYAN}│${NC}"
-                    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-                    shopt -s nullglob
-                    for log in "$LOG_DIR"/zpanel_*.log; do
-                        [[ -f "$log" ]] && {
-                            local size=$(du -h "$log" | cut -f1)
-                            # 使用更兼容的方式获取文件修改时间
-                            local mtime
-                            if stat -c %y "$log" &>/dev/null; then
-                                mtime=$(stat -c %y "$log" 2>/dev/null | cut -d' ' -f1-2)
-                            else
-                                mtime=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$log" 2>/dev/null || date -r "$log" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "未知")
-                            fi
-                            local name=$(basename "$log")
-                            echo -e "${CYAN}│${NC}  ${GREEN}•${NC} ${name}  ${CYAN}|${NC} ${size}  ${CYAN}|${NC} ${mtime}${CYAN}│${NC}"
-                        }
-                    done
-                    shopt -u nullglob
-
-                    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-                    echo -e "${CYAN}│${WHITE}  动态调整日志:${CYAN}                                             ${CYAN}│${NC}"
-                    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-                    if [[ -f "$LOG_DIR/dynamic.log" ]]; then
-                        local size=$(du -h "$LOG_DIR/dynamic.log" | cut -f1)
-                        # 使用更兼容的方式获取文件修改时间
-                        local mtime
-                        if stat -c %y "$LOG_DIR/dynamic.log" &>/dev/null; then
-                            mtime=$(stat -c %y "$LOG_DIR/dynamic.log" 2>/dev/null | cut -d' ' -f1-2)
-                        else
-                            mtime=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$LOG_DIR/dynamic.log" 2>/dev/null || date -r "$LOG_DIR/dynamic.log" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "未知")
-                        fi
-                        echo -e "${CYAN}│${NC}  ${GREEN}•${NC} dynamic.log  ${CYAN}|${NC} ${size}  ${CYAN}|${NC} ${mtime}${CYAN}│${NC}"
-                    fi
-                else
-                    echo -e "${CYAN}│${YELLOW}  暂无日志文件${CYAN}                                              ${CYAN}│${NC}"
-                fi
-
-                echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-                echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
-                echo ""
-                pause
-                ;;
-            4)
-                view_log_paged "zpanel"
-                ;;
-            5)
-                view_log_paged "dynamic"
-                ;;
-            6)
-                if confirm "确认清理过期日志？"; then
-                    clean_old_logs
-                fi
-                pause
-                ;;
-            0)
-                return
-                ;;
-            *)
-                echo -e "${RED}无效输入${NC}"
-                sleep 1
-                ;;
-        esac
-    done
-}
-
-# 分页查看日志
-# @param log_type 日志类型 (zpanel/dynamic)
-view_log_paged() {
-    local log_type=$1
-    local log_file=""
-    local lines=20
-    local page=1
-    local total_lines=0
-
-    case $log_type in
-        zpanel)
-            log_file=$(ls -t "$LOG_DIR"/zpanel_*.log 2>/dev/null | head -1)
-            ;;
-        dynamic)
-            log_file="$LOG_DIR/dynamic.log"
-            ;;
-    esac
-
-    if [[ ! -f "$log_file" ]]; then
-        echo -e "${YELLOW}日志文件不存在${NC}"
-        pause
-        return
-    fi
-
-    total_lines=$(wc -l < "$log_file")
-
-    while true; do
-        clear
-
-        echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-        echo -e "${CYAN}│${WHITE}         日志查看: $(basename "$log_file")${CYAN}                     │${NC}"
-        echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}│${WHITE}  页码: ${GREEN}${page}${NC}${WHITE}/$(( (total_lines + lines - 1) / lines ))${NC}  ${WHITE}总行数: ${GREEN}${total_lines}${NC}          ${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-
-        local start=$(( (page - 1) * lines + 1 ))
-        local end=$((page * lines))
-
-        sed -n "${start},${end}p" "$log_file" | while IFS= read -r line; do
-            echo -e "${CYAN}│${NC}  ${line}${CYAN}                                                │${NC}"
-        done
-
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-        echo -e "${CYAN}│${WHITE}  n - 下一页  p - 上一页  q - 退出${CYAN}                    │${NC}"
-        echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-        echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
-        echo ""
-        echo -ne "${WHITE}请选择: ${NC}"
-        read -r action
-
-        case $action in
-            n|N)
-                if [[ $page -lt $(( (total_lines + lines - 1) / lines )) ]]; then
-                    ((page++))
-                fi
-                ;;
-            p|P)
-                if [[ $page -gt 1 ]]; then
-                    ((page--))
-                fi
-                ;;
-            q|Q)
-                return
-                ;;
-        esac
-    done
-}
-
-# 轮转日志文件
-# 当日志文件超过指定大小时，创建压缩备份
-# @param log_file 日志文件路径
-# @param max_size_mb 最大大小 (MB)
-rotate_log() {
-    local log_file=$1
-    local max_size_mb=${2:-$LOG_MAX_SIZE_MB}
-
-    if [[ ! -f "$log_file" ]]; then
-        return 0
-    fi
-
-    local size_mb=$(du -m "$log_file" | cut -f1)
-
-    if [[ $size_mb -lt $max_size_mb ]]; then
-        return 0
-    fi
-
-    # 轮转日志文件
-    local log_dir=$(dirname "$log_file")
-    local log_base=$(basename "$log_file" .log)
-    local timestamp=$(date +%Y%m%d_%H%M%S)
-    local archive_file="${log_dir}/${log_base}_${timestamp}.log"
-
-    # 创建压缩备份
-    if mv "$log_file" "$archive_file" && gzip "$archive_file"; then
-        log info "日志已轮转: $(basename "$log_file") -> $(basename "$archive_file").gz"
-    else
-        log warn "日志轮转失败: $(basename "$log_file")"
-    fi
-}
-
-clean_old_logs() {
-    local cleaned=0
-    local current_time=$(date +%s)
-
-    # 使用单个循环处理所有日志文件
-    shopt -s nullglob
-    for log in "$LOG_DIR"/*.log; do
-        [[ -f "$log" ]] || continue
-
-        local log_name=$(basename "$log")
-        local size_mb=$(du -m "$log" | cut -f1)
-
-        # 检查文件大小限制
-        if [[ $size_mb -gt $LOG_MAX_SIZE_MB ]]; then
-            local temp_file
-            temp_file=$(mktemp) || {
-                log warn "无法创建临时文件: $log_name"
-                continue
-            }
-
-            # 设置临时文件权限
-            chmod 600 "$temp_file" 2>/dev/null || true
-
-            if tail -1000 "$log" > "$temp_file" && mv "$temp_file" "$log"; then
-                ((cleaned++))
-                log info "截断过大日志: $log_name"
-            else
-                rm -f "$temp_file"
-                log warn "截断失败: $log_name"
-            fi
-            continue
-        fi
-
-        # 检查 zpanel 日志的日期限制
-        if [[ "$log_name" =~ ^zpanel_[0-9]{8}\.log$ ]]; then
-            local log_date=$(echo "$log_name" | sed 's/zpanel_//' | sed 's/\.log//')
-            local log_age
-
-            # 使用更兼容的方式计算日志天数
-            local log_timestamp=0
-
-            # 检测date命令类型并选择合适的解析方法
-            if date --version &>/dev/null 2>&1; then
-                # GNU date (Linux)
-                log_timestamp=$(date -d "$log_date" +%s 2>/dev/null || echo 0)
-            else
-                # BSD date (macOS)
-                log_timestamp=$(date -j -f "%Y%m%d" "$log_date" +%s 2>/dev/null || echo 0)
-            fi
-
-            # 如果日期解析失败，使用文件修改时间作为回退
-            if [[ $log_timestamp -eq 0 ]]; then
-                local file_mtime
-                if stat -c %Y "$log" &>/dev/null; then
-                    file_mtime=$(stat -c %Y "$log")
-                else
-                    file_mtime=$(stat -f "%m" "$log" 2>/dev/null || echo 0)
-                fi
-                log_age=$(( (current_time - file_mtime) / 86400 )) || true
-            else
-                log_age=$(( (current_time - log_timestamp) / 86400 )) || true
-            fi
-
-            # 验证 log_age 是有效数字
-            if [[ "$log_age" =~ ^[0-9]+$ ]] && [[ $log_age -gt $LOG_RETENTION_DAYS ]]; then
-                rm -f "$log" && {
-                    ((cleaned++))
-                    log info "删除过期日志: $log_name"
-                } || log warn "删除失败: $log_name"
-            fi
-        fi
-    done
-    shopt -u nullglob
-
-    echo "清理完成，共处理 $cleaned 个日志文件"
-}
-
 # ============================================================================
-# 系统检测模块
+# 系统检测模块 (System)
 # ============================================================================
 
 detect_system() {
     log info "检测系统信息..."
 
     if [[ -f /etc/os-release ]]; then
-        # 使用 grep 提取信息，避免 source 导致的变量冲突
         CURRENT_DISTRO=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
         CURRENT_VERSION=$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
         CURRENT_DISTRO="${CURRENT_DISTRO,,}"
@@ -1289,14 +729,12 @@ detect_system() {
         PACKAGE_MANAGER="apk"
     fi
 
-    # 验证内存信息
     TOTAL_MEMORY_MB=$(free -m | awk '/^Mem:/ {print $2}')
     if [[ -z "$TOTAL_MEMORY_MB" || "$TOTAL_MEMORY_MB" -lt 1 ]]; then
         log error "无法获取内存信息"
         exit 1
     fi
 
-    # 验证 CPU 核心数
     CPU_CORES=$(nproc 2>/dev/null || echo 1)
     [[ $CPU_CORES -lt 1 ]] && CPU_CORES=1
 
@@ -1330,114 +768,163 @@ install_packages() {
 }
 
 # ============================================================================
-# 备份与回滚模块
+# 策略引擎模块 (Strategy)
 # ============================================================================
 
-create_backup() {
-    log info "创建系统备份..."
-
-    local timestamp=$(date +%Y%m%d_%H%M%S)
-    local backup_path="$BACKUP_DIR/backup_$timestamp"
-
-    if ! mkdir -p "$backup_path"; then
-        log error "无法创建备份目录: $backup_path"
-        return 1
+load_strategy_config() {
+    if [[ -f "$STRATEGY_CONFIG_FILE" ]]; then
+        safe_source "$STRATEGY_CONFIG_FILE" || STRATEGY_MODE="balance"
+    else
+        STRATEGY_MODE="balance"
     fi
+}
 
-    # 设置备份目录权限：仅允许 root 读写
-    chmod 700 "$backup_path" 2>/dev/null || true
+save_strategy_config() {
+    mkdir -p "$CONF_DIR"
+    chmod 700 "$CONF_DIR" 2>/dev/null || true
 
-    local files=(
-        "/etc/sysctl.conf"
-        "/etc/fstab"
-    )
+    cat > "$STRATEGY_CONFIG_FILE" <<EOF
+# ============================================================================
+# Z-Panel Pro 策略配置
+# ============================================================================
+# 自动生成，请勿手动修改
+#
+# STRATEGY_MODE: 优化策略模式
+#   - conservative: 保守模式，优先稳定性
+#   - balance: 平衡模式，性能与稳定兼顾（推荐）
+#   - aggressive: 激进模式，最大化利用内存
+# ============================================================================
 
-    local backed_up=0
-    for file in "${files[@]}"; do
-        if [[ -f "$file" ]]; then
-            if cp "$file" "$backup_path/" 2>/dev/null; then
-                ((backed_up++)) || true
-                log info "已备份: $file"
-            else
-                log warn "备份失败: $file"
-            fi
-        fi
-    done
-
-    cat > "$backup_path/info.txt" <<EOF
-backup_time=$timestamp
-backup_version=$SCRIPT_VERSION
-distro=$CURRENT_DISTRO
-distro_version=$CURRENT_VERSION
-strategy=$STRATEGY_MODE
-# 系统配置摘要（不包含完整配置）
-memory_mb=$TOTAL_MEMORY_MB
-cpu_cores=$CPU_CORES
+STRATEGY_MODE=$STRATEGY_MODE
 EOF
 
-    # 设置备份信息文件权限
-    chmod 600 "$backup_path/info.txt" 2>/dev/null || true
+    chmod 600 "$STRATEGY_CONFIG_FILE" 2>/dev/null || true
+}
 
-    log info "备份完成: $backup_path (共 $backed_up 个文件)"
+calculate_strategy() {
+    local mode=$1
+
+    local zram_ratio phys_limit swap_size swappiness dirty_ratio min_free
+
+    case $mode in
+        conservative)
+            zram_ratio=80
+            phys_limit=$((TOTAL_MEMORY_MB * 40 / 100)) || true
+            swap_size=$((TOTAL_MEMORY_MB * 100 / 100)) || true
+            swappiness=60
+            dirty_ratio=5
+            min_free=65536
+            ;;
+        balance)
+            zram_ratio=120
+            phys_limit=$((TOTAL_MEMORY_MB * 50 / 100)) || true
+            swap_size=$((TOTAL_MEMORY_MB * 150 / 100)) || true
+            swappiness=85
+            dirty_ratio=10
+            min_free=32768
+            ;;
+        aggressive)
+            zram_ratio=180
+            phys_limit=$((TOTAL_MEMORY_MB * 65 / 100)) || true
+            swap_size=$((TOTAL_MEMORY_MB * 200 / 100)) || true
+            swappiness=100
+            dirty_ratio=15
+            min_free=16384
+            ;;
+        *)
+            log error "未知的策略模式: $mode"
+            return 1
+            ;;
+    esac
+
+    echo "$zram_ratio $phys_limit $swap_size $swappiness $dirty_ratio $min_free"
+}
+
+validate_zram_mode() {
+    local mode=$1
+
+    if [[ "$mode" != "conservative" ]] && [[ "$mode" != "balance" ]] && [[ "$mode" != "aggressive" ]]; then
+        log error "无效的策略模式: $mode"
+        return 1
+    fi
     return 0
 }
 
-restore_backup() {
-    local backup_path=$1
+# ============================================================================
+# ZRAM设备管理模块 (ZRAM Device)
+# ============================================================================
 
-    if [[ ! -d "$backup_path" ]]; then
-        log error "备份目录不存在: $backup_path"
-        return 1
+get_available_zram_device() {
+    if [[ -n "$_ZRAM_DEVICE_CACHE" ]]; then
+        echo "$_ZRAM_DEVICE_CACHE"
+        return 0
     fi
 
-    if [[ ! -f "$backup_path/info.txt" ]]; then
-        log error "备份信息文件缺失: $backup_path/info.txt"
-        return 1
-    fi
-
-    log info "还原系统备份: $backup_path"
-
-    local restored=0
-    local failed=0
-
-    for file in "$backup_path"/*; do
-        if [[ -f "$file" ]]; then
-            local filename=$(basename "$file")
-            if [[ "$filename" != "info.txt" ]]; then
-                local target="/etc/$filename"
-                if [[ -f "$target" ]]; then
-                    # 创建原文件的备份
-                    local backup_target="${target}.bak.$(date +%Y%m%d_%H%M%S)"
-                    if ! cp "$target" "$backup_target" 2>/dev/null; then
-                        log warn "无法备份原文件: $target"
-                    fi
-                fi
-
-                if cp "$file" "$target" 2>/dev/null; then
-                    ((restored++)) || true
-                    log info "已还原: $filename"
-                else
-                    ((failed++)) || true
-                    log error "还原失败: $filename"
-                fi
-            fi
+    for i in {0..15}; do
+        if [[ -e "/sys/block/zram$i" ]] && ! swapon --show=NAME | grep -q "zram$i"; then
+            _ZRAM_DEVICE_CACHE="zram$i"
+            echo "zram$i"
+            return 0
         fi
     done
 
-    log info "还原完成: 成功 $restored 个文件，失败 $failed 个文件"
-    return 0
+    if [[ -e /sys/class/zram-control/hot_add ]]; then
+        local device_num=$(cat /sys/class/zram-control/hot_add)
+        _ZRAM_DEVICE_CACHE="zram$device_num"
+        echo "zram$device_num"
+        return 0
+    fi
+
+    return 1
 }
 
-# ============================================================================
-# 智能压缩算法检测模块
-# ============================================================================
+initialize_zram_device() {
+    if ! lsmod | grep -q zram; then
+        modprobe zram || {
+            log error "无法加载 ZRAM 模块"
+            return 1
+        }
+    fi
+
+    local zram_device
+    zram_device=$(get_available_zram_device) || {
+        log error "无法获取可用的 ZRAM 设备"
+        return 1
+    }
+
+    if swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
+        local failed_devices=()
+        for device in $(swapon --show=NAME --noheadings 2>/dev/null | grep zram); do
+            if ! swapoff "$device" 2>/dev/null; then
+                log error "无法停用设备: $device"
+                failed_devices+=("$device")
+            fi
+        done
+
+        if [[ ${#failed_devices[@]} -gt 0 ]]; then
+            log error "以下设备停用失败: ${failed_devices[*]}"
+            return 1
+        fi
+    fi
+
+    if [[ -e "/sys/block/$zram_device/reset" ]]; then
+        echo 1 > "/sys/block/$zram_device/reset" 2>/dev/null || true
+        sleep 0.3
+    fi
+
+    if [[ ! -e "/dev/$zram_device" ]]; then
+        log error "ZRAM 设备不存在: /dev/$zram_device"
+        return 1
+    fi
+
+    echo "$zram_device"
+    return 0
+}
 
 detect_best_algorithm() {
     log info "检测最优压缩算法..."
 
     local cpu_flags=$(cat /proc/cpuinfo | grep -m1 "flags" | sed 's/flags://')
-
-    # ZRAM 实时压缩场景：速度优先，CPU 占用低
     local algorithms=("lz4" "lzo" "zstd")
     local best_algo="lzo"
     local best_score=0
@@ -1447,16 +934,12 @@ detect_best_algorithm() {
 
         case $algo in
             lz4)
-                # lz4 速度极快，CPU 占用低，适合 ZRAM 实时压缩
                 score=100
                 ;;
             lzo)
-                # lzo 兼容性最好，速度较快
                 score=90
                 ;;
             zstd)
-                # zstd 压缩比高但 CPU 占用大，不推荐用于 ZRAM
-                # 仅在 CPU 支持 AVX2 时考虑使用
                 if echo "$cpu_flags" | grep -q "avx2"; then
                     score=70
                 else
@@ -1477,97 +960,6 @@ detect_best_algorithm() {
     echo "$best_algo"
 }
 
-# ============================================================================
-# 分级策略引擎
-# ============================================================================
-
-load_strategy_config() {
-    if [[ -f "$STRATEGY_CONFIG_FILE" ]]; then
-        safe_source "$STRATEGY_CONFIG_FILE" || STRATEGY_MODE="balance"
-    else
-        STRATEGY_MODE="balance"
-    fi
-}
-
-save_strategy_config() {
-    cat > "$STRATEGY_CONFIG_FILE" <<EOF
-# ============================================================================
-# Z-Panel Pro 策略配置
-# ============================================================================
-# 自动生成，请勿手动修改
-#
-# STRATEGY_MODE: 优化策略模式
-#   - conservative: 保守模式，优先稳定性
-#   - balance: 平衡模式，性能与稳定兼顾（推荐）
-#   - aggressive: 激进模式，最大化利用内存
-# ============================================================================
-
-STRATEGY_MODE=$STRATEGY_MODE
-EOF
-}
-
-calculate_strategy() {
-    local mode=$1
-
-    local zram_ratio phys_limit swap_size swappiness dirty_ratio min_free
-
-    case $mode in
-        conservative)
-            # 保守模式：优先稳定性
-            zram_ratio=80
-            phys_limit=$((TOTAL_MEMORY_MB * 40 / 100)) || true
-            swap_size=$((TOTAL_MEMORY_MB * 100 / 100)) || true
-            swappiness=60
-            dirty_ratio=5
-            min_free=65536
-            ;;
-        balance)
-            # 平衡模式：默认选项
-            zram_ratio=120
-            phys_limit=$((TOTAL_MEMORY_MB * 50 / 100)) || true
-            swap_size=$((TOTAL_MEMORY_MB * 150 / 100)) || true
-            swappiness=85
-            dirty_ratio=10
-            min_free=32768
-            ;;
-        aggressive)
-            # 激进模式：最大化利用
-            zram_ratio=180
-            phys_limit=$((TOTAL_MEMORY_MB * 65 / 100)) || true
-            swap_size=$((TOTAL_MEMORY_MB * 200 / 100)) || true
-            swappiness=100
-            dirty_ratio=15
-            min_free=16384
-            ;;
-        *)
-            log error "未知的策略模式: $mode"
-            return 1
-            ;;
-    esac
-
-    echo "$zram_ratio $phys_limit $swap_size $swappiness $dirty_ratio $min_free"
-}
-
-# ============================================================================
-# ZRAM 配置模块
-# ============================================================================
-
-# 验证 ZRAM 策略模式
-# @param mode 策略模式 (conservative/balance/aggressive)
-# @return 0 表示有效，1 表示无效
-validate_zram_mode() {
-    local mode=$1
-
-    if [[ "$mode" != "conservative" ]] && [[ "$mode" != "balance" ]] && [[ "$mode" != "aggressive" ]]; then
-        log error "无效的策略模式: $mode"
-        return 1
-    fi
-    return 0
-}
-
-# 获取或检测 ZRAM 压缩算法
-# @param algorithm 算法名称 (auto/zstd/lz4/lzo)
-# @return 算法名称
 get_zram_algorithm() {
     local algorithm=${1:-"auto"}
 
@@ -1577,64 +969,10 @@ get_zram_algorithm() {
     echo "$algorithm"
 }
 
-# 初始化 ZRAM 设备
-# @return 设备名称 (如: zram0)
-initialize_zram_device() {
-    # 确保 ZRAM 模块已加载
-    if ! lsmod | grep -q zram; then
-        modprobe zram || {
-            log error "无法加载 ZRAM 模块"
-            return 1
-        }
-    fi
-
-    # 获取或创建 ZRAM 设备
-    local zram_device
-    zram_device=$(get_available_zram_device) || {
-        log error "无法获取可用的 ZRAM 设备"
-        return 1
-    }
-
-    # 安全地停用已存在的 ZRAM swap
-    if swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
-        local failed_devices=()
-        for device in $(swapon --show=NAME --noheadings 2>/dev/null | grep zram); do
-            if ! swapoff "$device" 2>/dev/null; then
-                log error "无法停用设备: $device"
-                failed_devices+=("$device")
-            fi
-        done
-
-        if [[ ${#failed_devices[@]} -gt 0 ]]; then
-            log error "以下设备停用失败: ${failed_devices[*]}"
-            return 1
-        fi
-    fi
-
-    # 重置 ZRAM 设备
-    if [[ -e "/sys/block/$zram_device/reset" ]]; then
-        echo 1 > "/sys/block/$zram_device/reset" 2>/dev/null || true
-        sleep 0.3
-    fi
-
-    # 检查设备路径是否存在
-    if [[ ! -e "/dev/$zram_device" ]]; then
-        log error "ZRAM 设备不存在: /dev/$zram_device"
-        return 1
-    fi
-
-    echo "$zram_device"
-    return 0
-}
-
-# 配置 ZRAM 压缩参数
-# @param zram_device 设备名称
-# @param algorithm 压缩算法
 configure_zram_compression() {
     local zram_device=$1
     local algorithm=$2
 
-    # 设置压缩算法
     if [[ -e "/sys/block/$zram_device/comp_algorithm" ]]; then
         local supported=$(cat "/sys/block/$zram_device/comp_algorithm" 2>/dev/null)
         if echo "$supported" | grep -q "$algorithm"; then
@@ -1643,18 +981,13 @@ configure_zram_compression() {
             }
             log info "设置压缩算法: $algorithm"
         else
-            # 使用更兼容的方法提取默认算法（方括号内的算法）
-            # 格式通常是: lzo lz4 zstd [lz4] 或类似格式
             local fallback=""
-            # 先尝试用 awk 提取方括号内的内容
             fallback=$(echo "$supported" | awk -F'[][]' '{print $2}' | head -1)
 
-            # 如果 awk 方法失败，尝试用 sed 提取第一个算法
             if [[ -z "$fallback" ]]; then
                 fallback=$(echo "$supported" | sed 's/^\s*//' | head -1 | awk '{print $1}')
             fi
 
-            # 如果仍然为空，使用默认值
             [[ -z "$fallback" ]] && fallback="lzo"
 
             echo "$fallback" > "/sys/block/$zram_device/comp_algorithm" 2>/dev/null || true
@@ -1663,7 +996,6 @@ configure_zram_compression() {
         fi
     fi
 
-    # 设置压缩流数
     if [[ -e "/sys/block/$zram_device/max_comp_streams" ]]; then
         echo "$CPU_CORES" > "/sys/block/$zram_device/max_comp_streams" 2>/dev/null || true
         log info "设置压缩流数: $CPU_CORES"
@@ -1672,24 +1004,17 @@ configure_zram_compression() {
     echo "$algorithm"
 }
 
-# 配置 ZRAM 限制参数
-# @param zram_device 设备名称
-# @param zram_size ZRAM大小（MB）
-# @param phys_limit 物理内存限制（MB）
 configure_zram_limits() {
     local zram_device=$1
     local zram_size=$2
     local phys_limit=$3
 
-    # 设置 ZRAM 大小
     local zram_bytes=$((zram_size * 1024 * 1024)) || true
     echo "$zram_bytes" > "/sys/block/$zram_device/disksize" 2>/dev/null || {
         log error "设置 ZRAM 大小失败"
-        log error "设备: /sys/block/$zram_device/disksize"
         return 1
     }
 
-    # 物理内存熔断
     if [[ -e "/sys/block/$zram_device/mem_limit" ]]; then
         local phys_limit_bytes=$((phys_limit * 1024 * 1024)) || true
         echo "$phys_limit_bytes" > "/sys/block/$zram_device/mem_limit" 2>/dev/null || true
@@ -1699,96 +1024,35 @@ configure_zram_limits() {
     return 0
 }
 
-# 启用 ZRAM swap
-# @param zram_device 设备名称
 enable_zram_swap() {
     local zram_device=$1
 
-    # 格式化 ZRAM 设备为 swap
     mkswap "/dev/$zram_device" > /dev/null 2>&1 || {
         log error "格式化 ZRAM 失败"
-        log error "设备: /dev/$zram_device"
         return 1
     }
 
-    # 启用 ZRAM swap
     swapon -p 100 "/dev/$zram_device" > /dev/null 2>&1 || {
         log error "启用 ZRAM 失败"
-        log error "设备: /dev/$zram_device"
         return 1
     }
 
     return 0
 }
 
-get_zram_status() {
-    if ! command -v zramctl &> /dev/null; then
-        echo '{"enabled": false}'
-        return
-    fi
-
-    local zram_info=$(zramctl 2>/dev/null | tail -n +2)
-
-    if [[ -z "$zram_info" ]]; then
-        echo '{"enabled": false}'
-        return
-    fi
-
-    # 一次性解析所有字段，减少 awk 调用
-    local name disk_size data_size comp_size algo
-    read -r name disk_size data_size comp_size algo <<< "$zram_info"
-
-    local compression_ratio="0"
-    if [[ -n "$data_size" ]] && [[ -n "$comp_size" ]] && [[ "$comp_size" != "0" ]]; then
-        # 使用单次 awk 调用计算压缩比
-        compression_ratio=$(echo "$data_size $comp_size" | awk '{
-            data_num = $1
-            comp_num = $2
-            # 移除单位后缀
-            gsub(/[KMGT]/, "", data_num)
-            gsub(/[KMGT]/, "", comp_num)
-            if (comp_num > 0 && data_num > 0) {
-                printf "%.2f", data_num / comp_num
-            }
-        }')
-    fi
-
-    cat <<EOF
-{
-    "enabled": true,
-    "device": "$name",
-    "disk_size": "$disk_size",
-    "data_size": "$data_size",
-    "comp_size": "$comp_size",
-    "algorithm": "$algo",
-    "compression_ratio": "$compression_ratio"
-}
-EOF
-}
-
-# 准备 ZRAM 配置参数
-# @param algorithm 压缩算法
-# @param mode 策略模式
-# @return 输出: "algorithm mode zram_ratio phys_limit swap_size swappiness dirty_ratio min_free zram_size"
 prepare_zram_params() {
     local algorithm=${1:-"auto"}
     local mode=${2:-"$STRATEGY_MODE"}
 
-    # 验证策略模式
     validate_zram_mode "$mode" || return 1
-
-    # 获取或检测压缩算法
     algorithm=$(get_zram_algorithm "$algorithm")
 
-    # 计算策略参数
     local zram_ratio phys_limit swap_size swappiness dirty_ratio min_free
     read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< "$(calculate_strategy "$mode")"
 
-    # 计算 ZRAM 大小
     local zram_size=$((TOTAL_MEMORY_MB * zram_ratio / 100)) || true
     [[ $zram_size -lt 512 ]] && zram_size=512
 
-    # 验证变量
     if ! validate_positive_int "$zram_size" || ! validate_positive_int "$phys_limit"; then
         log error "ZRAM 参数验证失败"
         return 1
@@ -1798,12 +1062,6 @@ prepare_zram_params() {
     return 0
 }
 
-# 保存 ZRAM 配置到文件
-# @param algorithm 压缩算法
-# @param mode 策略模式
-# @param zram_ratio ZRAM 百分比
-# @param zram_size ZRAM 大小
-# @param phys_limit 物理内存限制
 save_zram_config() {
     local algorithm=$1
     local mode=$2
@@ -1811,16 +1069,9 @@ save_zram_config() {
     local zram_size=$4
     local phys_limit=$5
 
-    # 创建配置目录
-    if ! mkdir -p "$CONF_DIR"; then
-        log error "无法创建配置目录: $CONF_DIR"
-        return 1
-    fi
-
-    # 设置配置目录权限：仅允许 root 读写
+    mkdir -p "$CONF_DIR"
     chmod 700 "$CONF_DIR" 2>/dev/null || true
 
-    # 保存 ZRAM 配置
     cat > "$ZRAM_CONFIG_FILE" <<EOF
 # ============================================================================
 # Z-Panel Pro ZRAM 配置
@@ -1843,93 +1094,7 @@ SIZE=$zram_size
 PHYS_LIMIT=$phys_limit
 EOF
 
-    # 设置配置文件权限：仅允许 root 读写
     chmod 600 "$ZRAM_CONFIG_FILE" 2>/dev/null || true
-    return 0
-}
-
-# 启动 ZRAM 服务
-start_zram_service() {
-    if command -v systemctl &> /dev/null; then
-        systemctl daemon-reload > /dev/null 2>&1
-        if systemctl is-active --quiet zram.service 2>/dev/null; then
-            log info "zram.service 已在运行，跳过启动"
-        else
-            systemctl start zram.service > /dev/null 2>&1 && {
-                log info "zram.service 已启动"
-            } || {
-                log warn "zram.service 启动失败，但 ZRAM 已在当前会话中生效"
-            }
-        fi
-    fi
-}
-
-# 配置 ZRAM（重构后的主函数）
-# @param algorithm 压缩算法
-# @param mode 策略模式
-configure_zram() {
-    local algorithm=${1:-"auto"}
-    local mode=${2:-"$STRATEGY_MODE"}
-
-    log info "开始配置 ZRAM (策略: $mode)..."
-
-    # 准备配置参数
-    local params
-    params=$(prepare_zram_params "$algorithm" "$mode") || return 1
-    read -r algorithm mode zram_ratio phys_limit swap_size swappiness dirty_ratio min_free zram_size <<< "$params"
-
-    # 安装 zram-tools（如果需要）
-    if ! command -v zramctl &> /dev/null; then
-        log info "安装 zram-tools..."
-        install_packages zram-tools zram-config zstd lz4 lzop || {
-            log error "安装 zram-tools 失败"
-            return 1
-        }
-    fi
-
-    # 初始化 ZRAM 设备
-    local zram_device
-    zram_device=$(initialize_zram_device) || {
-        log error "初始化 ZRAM 设备失败"
-        return 1
-    }
-    log info "使用 ZRAM 设备: $zram_device"
-
-    # 配置压缩参数
-    algorithm=$(configure_zram_compression "$zram_device" "$algorithm")
-
-    # 配置 ZRAM 限制（大小和物理内存熔断）
-    configure_zram_limits "$zram_device" "$zram_size" "$phys_limit" || {
-        log error "配置 ZRAM 限制失败"
-        return 1
-    }
-
-    # 启用 ZRAM swap
-    enable_zram_swap "$zram_device" || {
-        log error "启用 ZRAM swap 失败"
-        return 1
-    }
-
-    # 保存 ZRAM 配置
-    save_zram_config "$algorithm" "$mode" "$zram_ratio" "$zram_size" "$phys_limit" || {
-        log error "保存 ZRAM 配置失败"
-        return 1
-    }
-
-    # 创建 ZRAM 持久化服务
-    create_zram_service || {
-        log warn "创建 ZRAM 服务失败"
-    }
-
-    # 启动 ZRAM 服务
-    start_zram_service
-
-    # 更新 ZRAM 状态
-    ZRAM_ENABLED=true
-    clear_zram_cache
-
-    log info "ZRAM 配置成功: $algorithm, ${zram_size}MB, 优先级 100"
-
     return 0
 }
 
@@ -1943,7 +1108,6 @@ CONF_DIR="/opt/z-panel/conf"
 LOG_DIR="/opt/z-panel/logs"
 LIB_DIR="/opt/z-panel/lib"
 
-# 加载共享函数库
 if [[ -f "$LIB_DIR/common.sh" ]]; then
     source "$LIB_DIR/common.sh"
 else
@@ -1954,18 +1118,13 @@ else
     safe_source() {
         local file=$1
         local pattern='^[A-Z_][A-Z0-9_]*='
-
         if [[ ! -f "$file" ]]; then
             return 1
         fi
-
-        # 检查是否有命令执行、重定向等危险操作（排除 $VAR 引用）
         if grep -qE '`|\$\([^)]*\)|>|<|&|;' "$file"; then
             log "配置文件包含危险字符: $file"
             return 1
         fi
-
-        # 直接在当前 Shell 环境中 source
         source "$file"
         return 0
     }
@@ -2001,7 +1160,6 @@ if [[ -f "$CONF_DIR/zram.conf" ]]; then
     }
     log "设置 ZRAM 大小: ${SIZE}MB"
 
-    # 物理内存熔断
     if [[ -e /sys/block/zram0/mem_limit ]]; then
         local phys_limit_bytes=$((PHYS_LIMIT * 1024 * 1024)) || true
         echo "$phys_limit_bytes" > /sys/block/zram0/mem_limit 2>/dev/null || true
@@ -2024,7 +1182,6 @@ else
     exit 1
 fi
 
-# 应用内核参数
 if [[ -f "$CONF_DIR/kernel.conf" ]]; then
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^# ]] && continue
@@ -2034,7 +1191,6 @@ if [[ -f "$CONF_DIR/kernel.conf" ]]; then
 fi
 EOF
 
-    # 设置启动脚本权限：仅允许 root 执行
     chmod 700 "$INSTALL_DIR/zram-start.sh" 2>/dev/null || true
 
     if command -v systemctl &> /dev/null; then
@@ -2055,25 +1211,84 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-        # 设置 systemd 服务文件权限：仅允许 root 读写
-        chmod 644 /etc/systemd/system/zram.service 2>/dev/null || true
-
-        # 设置服务文件权限：仅允许 root 读写
         chmod 644 /etc/systemd/system/zram.service 2>/dev/null || true
 
         systemctl daemon-reload > /dev/null 2>&1
         systemctl enable zram.service > /dev/null 2>&1
 
-        # 验证服务配置
-        if grep -q "Type=oneshot" /etc/systemd/system/zram.service && \
-           grep -q "RemainAfterExit=yes" /etc/systemd/system/zram.service; then
-            log info "systemd 服务配置验证成功 (Type=oneshot, RemainAfterExit=yes)"
-        else
-            log warn "systemd 服务配置验证失败"
-        fi
-
         log info "systemd 服务已创建并已启用"
     fi
+}
+
+start_zram_service() {
+    if command -v systemctl &> /dev/null; then
+        systemctl daemon-reload > /dev/null 2>&1
+        if systemctl is-active --quiet zram.service 2>/dev/null; then
+            log info "zram.service 已在运行，跳过启动"
+        else
+            systemctl start zram.service > /dev/null 2>&1 && {
+                log info "zram.service 已启动"
+            } || {
+                log warn "zram.service 启动失败，但 ZRAM 已在当前会话中生效"
+            }
+        fi
+    fi
+}
+
+configure_zram() {
+    local algorithm=${1:-"auto"}
+    local mode=${2:-"$STRATEGY_MODE"}
+
+    log info "开始配置 ZRAM (策略: $mode)..."
+
+    local params
+    params=$(prepare_zram_params "$algorithm" "$mode") || return 1
+    read -r algorithm mode zram_ratio phys_limit swap_size swappiness dirty_ratio min_free zram_size <<< "$params"
+
+    if ! command -v zramctl &> /dev/null; then
+        log info "安装 zram-tools..."
+        install_packages zram-tools zram-config zstd lz4 lzop || {
+            log error "安装 zram-tools 失败"
+            return 1
+        }
+    fi
+
+    local zram_device
+    zram_device=$(initialize_zram_device) || {
+        log error "初始化 ZRAM 设备失败"
+        return 1
+    }
+    log info "使用 ZRAM 设备: $zram_device"
+
+    algorithm=$(configure_zram_compression "$zram_device" "$algorithm")
+
+    configure_zram_limits "$zram_device" "$zram_size" "$phys_limit" || {
+        log error "配置 ZRAM 限制失败"
+        return 1
+    }
+
+    enable_zram_swap "$zram_device" || {
+        log error "启用 ZRAM swap 失败"
+        return 1
+    }
+
+    save_zram_config "$algorithm" "$mode" "$zram_ratio" "$zram_size" "$phys_limit" || {
+        log error "保存 ZRAM 配置失败"
+        return 1
+    }
+
+    create_zram_service || {
+        log warn "创建 ZRAM 服务失败"
+    }
+
+    start_zram_service
+
+    ZRAM_ENABLED=true
+    clear_zram_cache
+
+    log info "ZRAM 配置成功: $algorithm, ${zram_size}MB, 优先级 100"
+
+    return 0
 }
 
 disable_zram() {
@@ -2098,7 +1313,7 @@ disable_zram() {
 }
 
 # ============================================================================
-# 虚拟内存智能管理模块
+# 内核参数模块 (Kernel)
 # ============================================================================
 
 apply_io_fuse_protection() {
@@ -2121,15 +1336,12 @@ apply_oom_protection() {
     local protected=0
     local failed=0
 
-    # 安全地处理 SSH 进程
     local pids
     pids=$(pgrep sshd 2>/dev/null) || pids=""
 
     if [[ -n "$pids" ]]; then
         while IFS= read -r pid; do
-            # 验证 PID 是否为有效的数字
             if [[ "$pid" =~ ^[0-9]+$ ]] && [[ -d "/proc/$pid" ]] && [[ -f "/proc/$pid/oom_score_adj" ]]; then
-                # 验证进程命令行是否为 sshd
                 local cmdline=$(cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ' | head -c 100)
                 if [[ "$cmdline" == *"sshd"* ]]; then
                     if echo -1000 > "/proc/$pid/oom_score_adj" 2>/dev/null; then
@@ -2143,14 +1355,11 @@ apply_oom_protection() {
         done <<< "$pids"
     fi
 
-    # 安全地处理 systemd 进程
     pids=$(pgrep systemd 2>/dev/null) || pids=""
 
     if [[ -n "$pids" ]]; then
         while IFS= read -r pid; do
-            # 验证 PID 是否为有效的数字
             if [[ "$pid" =~ ^[0-9]+$ ]] && [[ -d "/proc/$pid" ]] && [[ -f "/proc/$pid/oom_score_adj" ]]; then
-                # 验证进程命令行是否为 systemd
                 local cmdline=$(cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ' | head -c 100)
                 if [[ "$cmdline" == *"systemd"* ]]; then
                     if echo -1000 > "/proc/$pid/oom_score_adj" 2>/dev/null; then
@@ -2167,31 +1376,24 @@ apply_oom_protection() {
     log info "OOM 保护已启用 (已保护: $protected 个进程, 失败: $failed 个)"
 }
 
-# 计算动态 swappiness 值
-# @param base_swappiness 基础 swappiness 值
-# @param mode 策略模式
-# @return 动态调整后的 swappiness 值
 calculate_dynamic_swappiness() {
     local base_swappiness=$1
     local mode=${2:-"$STRATEGY_MODE"}
 
     local swappiness=$base_swappiness
 
-    # 使用缓存获取内存信息
     read -r mem_total _ _ _ <<< $(get_memory_info false)
     read -r swap_total swap_used <<< $(get_swap_info false)
 
     local swap_usage=0
     [[ $swap_total -gt 0 ]] && swap_usage=$((swap_used * 100 / swap_total)) || true
 
-    # 使用缓存获取 ZRAM 信息
     read -r zram_total zram_used <<< $(get_zram_usage)
     local zram_usage=0
     if [[ $zram_total -gt 0 ]]; then
         zram_usage=$((zram_used * 100 / zram_total)) || true
     fi
 
-    # 动态调整 swappiness
     if [[ $zram_usage -gt 80 ]]; then
         swappiness=$((swappiness - 20)) || true
     elif [[ $zram_usage -gt 50 ]]; then
@@ -2214,18 +1416,12 @@ calculate_dynamic_swappiness() {
     echo "$swappiness"
 }
 
-# 保存内核参数配置到文件
-# @param swappiness swappiness 值
-# @param dirty_ratio 脏数据比例
-# @param min_free 最小空闲内存
 save_kernel_config() {
     local swappiness=$1
     local dirty_ratio=$2
     local min_free=$3
 
     mkdir -p "$CONF_DIR"
-
-    # 设置配置目录权限：仅允许 root 读写
     chmod 700 "$CONF_DIR" 2>/dev/null || true
 
     cat > "$KERNEL_CONFIG_FILE" <<EOF
@@ -2272,20 +1468,16 @@ fs.file-max=2097152
 fs.inotify.max_user_watches=524288
 EOF
 
-    # 设置内核配置文件权限：仅允许 root 读写
     chmod 600 "$KERNEL_CONFIG_FILE" 2>/dev/null || true
 }
 
-# 应用内核参数到系统
 apply_kernel_params() {
-    # 从配置文件应用参数
     while IFS='=' read -r key value; do
         [[ "$key" =~ ^# ]] && continue
         [[ -z "$key" ]] && continue
         sysctl -w "$key=$value" > /dev/null 2>&1 || true
     done < "$KERNEL_CONFIG_FILE"
 
-    # 更新 /etc/sysctl.conf
     if [[ -f /etc/sysctl.conf ]]; then
         sed -i '/# Z-Panel Pro 内核参数配置/,/# Z-Panel Pro 内核参数配置结束/d' /etc/sysctl.conf
 
@@ -2299,8 +1491,6 @@ EOF
     fi
 }
 
-# 配置虚拟内存（重构后的主函数）
-# @param mode 策略模式
 configure_virtual_memory() {
     local mode=${1:-"$STRATEGY_MODE"}
 
@@ -2308,19 +1498,15 @@ configure_virtual_memory() {
 
     read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< $(calculate_strategy "$mode")
 
-    # 计算动态 swappiness
     local dynamic_swappiness
     dynamic_swappiness=$(calculate_dynamic_swappiness "$swappiness" "$mode")
 
     log info "建议 swappiness: $dynamic_swappiness"
 
-    # 保存内核配置
     save_kernel_config "$dynamic_swappiness" "$dirty_ratio" "$min_free"
 
-    # 应用内核参数
     apply_kernel_params
 
-    # 应用保护机制
     apply_io_fuse_protection "$dirty_ratio"
     apply_oom_protection
 
@@ -2328,11 +1514,414 @@ configure_virtual_memory() {
 }
 
 # ============================================================================
-# 动态调整模块
+# 备份与回滚模块 (Backup)
 # ============================================================================
 
-# 创建动态调整脚本
-# @return 0 表示成功，1 表示失败
+create_backup() {
+    log info "创建系统备份..."
+
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local backup_path="$BACKUP_DIR/backup_$timestamp"
+
+    if ! mkdir -p "$backup_path"; then
+        log error "无法创建备份目录: $backup_path"
+        return 1
+    fi
+
+    chmod 700 "$backup_path" 2>/dev/null || true
+
+    local files=(
+        "/etc/sysctl.conf"
+        "/etc/fstab"
+    )
+
+    local backed_up=0
+    for file in "${files[@]}"; do
+        if [[ -f "$file" ]]; then
+            if cp "$file" "$backup_path/" 2>/dev/null; then
+                ((backed_up++)) || true
+                log info "已备份: $file"
+            else
+                log warn "备份失败: $file"
+            fi
+        fi
+    done
+
+    cat > "$backup_path/info.txt" <<EOF
+backup_time=$timestamp
+backup_version=$SCRIPT_VERSION
+distro=$CURRENT_DISTRO
+distro_version=$CURRENT_VERSION
+strategy=$STRATEGY_MODE
+memory_mb=$TOTAL_MEMORY_MB
+cpu_cores=$CPU_CORES
+EOF
+
+    chmod 600 "$backup_path/info.txt" 2>/dev/null || true
+
+    log info "备份完成: $backup_path (共 $backed_up 个文件)"
+    return 0
+}
+
+restore_backup() {
+    local backup_path=$1
+
+    if [[ ! -d "$backup_path" ]]; then
+        log error "备份目录不存在: $backup_path"
+        return 1
+    fi
+
+    if [[ ! -f "$backup_path/info.txt" ]]; then
+        log error "备份信息文件缺失: $backup_path/info.txt"
+        return 1
+    fi
+
+    log info "还原系统备份: $backup_path"
+
+    local restored=0
+    local failed=0
+
+    for file in "$backup_path"/*; do
+        if [[ -f "$file" ]]; then
+            local filename=$(basename "$file")
+            if [[ "$filename" != "info.txt" ]]; then
+                local target="/etc/$filename"
+                if [[ -f "$target" ]]; then
+                    local backup_target="${target}.bak.$(date +%Y%m%d_%H%M%S)"
+                    if ! cp "$target" "$backup_target" 2>/dev/null; then
+                        log warn "无法备份原文件: $target"
+                    fi
+                fi
+
+                if cp "$file" "$target" 2>/dev/null; then
+                    ((restored++)) || true
+                    log info "已还原: $filename"
+                else
+                    ((failed++)) || true
+                    log error "还原失败: $filename"
+                fi
+            fi
+        fi
+    done
+
+    log info "还原完成: 成功 $restored 个文件，失败 $failed 个文件"
+    return 0
+}
+
+# ============================================================================
+# 日志管理模块 (Log Management)
+# ============================================================================
+
+load_log_config() {
+    if [[ -f "$LOG_CONFIG_FILE" ]]; then
+        safe_source "$LOG_CONFIG_FILE" || true
+    fi
+}
+
+save_log_config() {
+    [[ ! "$LOG_MAX_SIZE_MB" =~ ^[0-9]+$ ]] && LOG_MAX_SIZE_MB=50
+    [[ ! "$LOG_RETENTION_DAYS" =~ ^[0-9]+$ ]] && LOG_RETENTION_DAYS=30
+
+    mkdir -p "$CONF_DIR"
+    chmod 700 "$CONF_DIR" 2>/dev/null || true
+
+    cat > "$LOG_CONFIG_FILE" <<EOF
+# ============================================================================
+# Z-Panel Pro 日志配置
+# ============================================================================
+# 自动生成，请勿手动修改
+#
+# LOG_MAX_SIZE_MB: 单个日志文件最大大小（MB）
+# LOG_RETENTION_DAYS: 日志文件保留天数
+# ============================================================================
+
+LOG_MAX_SIZE_MB=$LOG_MAX_SIZE_MB
+LOG_RETENTION_DAYS=$LOG_RETENTION_DAYS
+EOF
+
+    chmod 600 "$LOG_CONFIG_FILE" 2>/dev/null || true
+}
+
+rotate_log() {
+    local log_file=$1
+    local max_size_mb=${2:-$LOG_MAX_SIZE_MB}
+
+    if [[ ! -f "$log_file" ]]; then
+        return 0
+    fi
+
+    local size_mb=$(du -m "$log_file" | cut -f1)
+
+    if [[ $size_mb -lt $max_size_mb ]]; then
+        return 0
+    fi
+
+    local log_dir=$(dirname "$log_file")
+    local log_base=$(basename "$log_file" .log)
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local archive_file="${log_dir}/${log_base}_${timestamp}.log"
+
+    if mv "$log_file" "$archive_file" && gzip "$archive_file"; then
+        log info "日志已轮转: $(basename "$log_file") -> $(basename "$archive_file").gz"
+    else
+        log warn "日志轮转失败: $(basename "$log_file")"
+    fi
+}
+
+clean_old_logs() {
+    local cleaned=0
+    local current_time=$(date +%s)
+
+    shopt -s nullglob
+    for log in "$LOG_DIR"/*.log; do
+        [[ -f "$log" ]] || continue
+
+        local log_name=$(basename "$log")
+        local size_mb=$(du -m "$log" | cut -f1)
+
+        if [[ $size_mb -gt $LOG_MAX_SIZE_MB ]]; then
+            local temp_file
+            temp_file=$(mktemp) || {
+                log warn "无法创建临时文件: $log_name"
+                continue
+            }
+
+            chmod 600 "$temp_file" 2>/dev/null || true
+
+            if tail -1000 "$log" > "$temp_file" && mv "$temp_file" "$log"; then
+                ((cleaned++)) || true
+                log info "截断过大日志: $log_name"
+            else
+                rm -f "$temp_file"
+                log warn "截断失败: $log_name"
+            fi
+            continue
+        fi
+
+        if [[ "$log_name" =~ ^zpanel_[0-9]{8}\.log$ ]]; then
+            local log_date=$(echo "$log_name" | sed 's/zpanel_//' | sed 's/\.log//')
+            local log_age
+
+            local log_timestamp=0
+
+            if date --version &>/dev/null 2>&1; then
+                log_timestamp=$(date -d "$log_date" +%s 2>/dev/null || echo 0)
+            else
+                log_timestamp=$(date -j -f "%Y%m%d" "$log_date" +%s 2>/dev/null || echo 0)
+            fi
+
+            if [[ $log_timestamp -eq 0 ]]; then
+                local file_mtime
+                if stat -c %Y "$log" &>/dev/null; then
+                    file_mtime=$(stat -c %Y "$log")
+                else
+                    file_mtime=$(stat -f "%m" "$log" 2>/dev/null || echo 0)
+                fi
+                log_age=$(( (current_time - file_mtime) / 86400 )) || true
+            else
+                log_age=$(( (current_time - log_timestamp) / 86400 )) || true
+            fi
+
+            if [[ "$log_age" =~ ^[0-9]+$ ]] && [[ $log_age -gt $LOG_RETENTION_DAYS ]]; then
+                rm -f "$log" && {
+                    ((cleaned++)) || true
+                    log info "删除过期日志: $log_name"
+                } || log warn "删除失败: $log_name"
+            fi
+        fi
+    done
+    shopt -u nullglob
+
+    echo "清理完成，共处理 $cleaned 个日志文件"
+}
+
+log_config_menu() {
+    load_log_config
+
+    while true; do
+        clear
+
+        ui_header "日志管理"
+        ui_row " 当前配置:"
+        ui_row "  最大日志大小: ${GREEN}${LOG_MAX_SIZE_MB}MB${NC}"
+        ui_row "  日志保留天数: ${GREEN}${LOG_RETENTION_DAYS}天${NC}"
+        ui_line
+        ui_row " 操作选项:"
+        ui_menu_item "1" "设置最大日志大小"
+        ui_menu_item "2" "设置日志保留天数"
+        ui_menu_item "3" "查看日志文件列表"
+        ui_menu_item "4" "查看运行日志（分页）"
+        ui_menu_item "5" "查看动态调整日志（分页）"
+        ui_menu_item "6" "清理过期日志"
+        ui_menu_item "0" "返回"
+        ui_bot
+
+        echo ""
+        echo -ne "${WHITE}请选择 [0-6]: ${NC}"
+        read -r choice
+
+        case $choice in
+            1)
+                local valid=false
+                while [[ "$valid" == "false" ]]; do
+                    echo -ne "\n设置最大日志大小 (MB, 10-500): "
+                    read -r size
+                    if [[ "$size" =~ ^[0-9]+$ ]] && [[ $size -ge 10 ]] && [[ $size -le 500 ]]; then
+                        LOG_MAX_SIZE_MB=$size
+                        save_log_config
+                        echo -e "${GREEN}设置成功${NC}"
+                        valid=true
+                    else
+                        echo -e "${RED}无效输入，请输入 10-500 之间的数字${NC}"
+                    fi
+                done
+                pause
+                ;;
+            2)
+                local valid=false
+                while [[ "$valid" == "false" ]]; do
+                    echo -ne "\n设置日志保留天数 (1-365): "
+                    read -r days
+                    if [[ "$days" =~ ^[0-9]+$ ]] && [[ $days -ge 1 ]] && [[ $days -le 365 ]]; then
+                        LOG_RETENTION_DAYS=$days
+                        save_log_config
+                        echo -e "${GREEN}设置成功${NC}"
+                        valid=true
+                    else
+                        echo -e "${RED}无效输入，请输入 1-365 之间的数字${NC}"
+                    fi
+                done
+                pause
+                ;;
+            3)
+                clear
+                ui_header "日志文件列表"
+
+                if [[ -d "$LOG_DIR" ]]; then
+                    ui_row " ZPanel 日志:"
+                    shopt -s nullglob
+                    for log in "$LOG_DIR"/zpanel_*.log; do
+                        [[ -f "$log" ]] && {
+                            local size=$(du -h "$log" | cut -f1)
+                            local mtime
+                            if stat -c %y "$log" &>/dev/null; then
+                                mtime=$(stat -c %y "$log" 2>/dev/null | cut -d' ' -f1-2)
+                            else
+                                mtime=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$log" 2>/dev/null || date -r "$log" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "未知")
+                            fi
+                            local name=$(basename "$log")
+                            ui_row "  ${GREEN}•${NC} ${name} | ${size} | ${mtime}"
+                        }
+                    done
+                    shopt -u nullglob
+
+                    ui_row " 动态调整日志:"
+                    if [[ -f "$LOG_DIR/dynamic.log" ]]; then
+                        local size=$(du -h "$LOG_DIR/dynamic.log" | cut -f1)
+                        local mtime
+                        if stat -c %y "$LOG_DIR/dynamic.log" &>/dev/null; then
+                            mtime=$(stat -c %y "$LOG_DIR/dynamic.log" 2>/dev/null | cut -d' ' -f1-2)
+                        else
+                            mtime=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$LOG_DIR/dynamic.log" 2>/dev/null || date -r "$LOG_DIR/dynamic.log" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "未知")
+                        fi
+                        ui_row "  ${GREEN}•${NC} dynamic.log | ${size} | ${mtime}"
+                    fi
+                else
+                    ui_row " ${YELLOW}暂无日志文件${NC}"
+                fi
+
+                ui_bot
+                pause
+                ;;
+            4)
+                view_log_paged "zpanel"
+                ;;
+            5)
+                view_log_paged "dynamic"
+                ;;
+            6)
+                if confirm "确认清理过期日志？"; then
+                    clean_old_logs
+                fi
+                pause
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}无效输入${NC}"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+view_log_paged() {
+    local log_type=$1
+    local log_file=""
+    local lines=20
+    local page=1
+    local total_lines=0
+
+    case $log_type in
+        zpanel)
+            log_file=$(ls -t "$LOG_DIR"/zpanel_*.log 2>/dev/null | head -1)
+            ;;
+        dynamic)
+            log_file="$LOG_DIR/dynamic.log"
+            ;;
+    esac
+
+    if [[ ! -f "$log_file" ]]; then
+        echo -e "${YELLOW}日志文件不存在${NC}"
+        pause
+        return
+    fi
+
+    total_lines=$(wc -l < "$log_file")
+
+    while true; do
+        clear
+
+        ui_header "日志查看: $(basename "$log_file")"
+        ui_row " 页码: ${GREEN}${page}${NC}/$(( (total_lines + lines - 1) / lines ))  总行数: ${GREEN}${total_lines}${NC}"
+        ui_line
+
+        local start=$(( (page - 1) * lines + 1 ))
+        local end=$((page * lines))
+
+        sed -n "${start},${end}p" "$log_file" | while IFS= read -r line; do
+            ui_row "  ${line}"
+        done
+
+        ui_bot
+        echo -e "${YELLOW}n - 下一页  p - 上一页  q - 退出${NC}"
+        echo ""
+        echo -ne "${WHITE}请选择: ${NC}"
+        read -r action
+
+        case $action in
+            n|N)
+                if [[ $page -lt $(( (total_lines + lines - 1) / lines )) ]]; then
+                    ((page++))
+                fi
+                ;;
+            p|P)
+                if [[ $page -gt 1 ]]; then
+                    ((page--))
+                fi
+                ;;
+            q|Q)
+                return
+                ;;
+        esac
+    done
+}
+
+# ============================================================================
+# 动态调整模块 (Dynamic)
+# ============================================================================
+
 create_dynamic_adjust_script() {
     cat > "$INSTALL_DIR/dynamic-adjust.sh" <<'EOF'
 #!/bin/bash
@@ -2341,7 +1930,6 @@ CONF_DIR="/opt/z-panel/conf"
 LOG_DIR="/opt/z-panel/logs"
 LIB_DIR="/opt/z-panel/lib"
 
-# 加载共享函数库
 if [[ -f "$LIB_DIR/common.sh" ]]; then
     source "$LIB_DIR/common.sh"
 else
@@ -2379,7 +1967,6 @@ else
     STRATEGY_MODE="balance"
 fi
 
-# 使用统一的函数获取内存信息
 read -r mem_total mem_used mem_avail buff_cache <<< $(get_memory_info)
 mem_percent=$((mem_used * 100 / mem_total)) || true
 
@@ -2391,7 +1978,6 @@ read -r zram_total zram_used <<< $(get_zram_usage)
 zram_usage=0
 [[ $zram_total -gt 0 ]] && zram_usage=$((zram_used * 100 / zram_total)) || true
 
-# 计算最优 swappiness（与主脚本保持一致的逻辑）
 optimal_swappiness=60
 if [[ $zram_usage -gt 80 ]]; then
     optimal_swappiness=30
@@ -2421,13 +2007,9 @@ fi
 log "内存: ${mem_percent}%, Swap: ${swap_usage}%, ZRAM: ${zram_usage}%, swappiness: $optimal_swappiness"
 EOF
 
-    # 设置动态调整脚本权限：仅允许 root 执行
     chmod 700 "$INSTALL_DIR/dynamic-adjust.sh" 2>/dev/null || true
 }
 
-# 安全的 crontab 添加操作
-# @param cron_entry 要添加的 crontab 条目
-# @return 0 表示成功，1 表示失败
 safe_crontab_add() {
     local cron_entry="$1"
     local cron_temp
@@ -2436,18 +2018,13 @@ safe_crontab_add() {
         return 1
     }
 
-    # 设置临时文件权限
     chmod 600 "$cron_temp" 2>/dev/null || true
 
-    # 获取当前 crontab 并过滤
     if crontab -l 2>/dev/null > "$cron_temp"; then
-        # 检查是否已存在
         if ! grep -q "$(echo "$cron_entry" | awk '{print $NF}')" "$cron_temp"; then
             echo "$cron_entry" >> "$cron_temp"
 
-            # 验证临时文件内容
             if grep -q "$(echo "$cron_entry" | awk '{print $NF}')" "$cron_temp"; then
-                # 安装新的 crontab
                 crontab "$cron_temp" 2>/dev/null || {
                     log error "crontab 安装失败"
                     rm -f "$cron_temp"
@@ -2460,10 +2037,8 @@ safe_crontab_add() {
             fi
         fi
     else
-        # 没有现有crontab，创建新的
         echo "$cron_entry" > "$cron_temp"
 
-        # 验证临时文件内容
         if grep -q "$(echo "$cron_entry" | awk '{print $NF}')" "$cron_temp"; then
             crontab "$cron_temp" 2>/dev/null || {
                 log error "crontab 设置失败"
@@ -2481,9 +2056,6 @@ safe_crontab_add() {
     return 0
 }
 
-# 安全的 crontab 删除操作
-# @param pattern 要删除的条目匹配模式
-# @return 0 表示成功，1 表示失败
 safe_crontab_remove() {
     local pattern="$1"
     local cron_temp
@@ -2492,15 +2064,11 @@ safe_crontab_remove() {
         return 1
     }
 
-    # 设置临时文件权限
     chmod 600 "$cron_temp" 2>/dev/null || true
 
-    # 获取当前 crontab 并过滤
     if crontab -l 2>/dev/null > "$cron_temp"; then
-        # 过滤掉匹配的条目
         grep -v "$pattern" "$cron_temp" > "${cron_temp}.filtered" 2>/dev/null || true
 
-        # 验证过滤后的内容
         if [[ -f "${cron_temp}.filtered" ]]; then
             crontab "${cron_temp}.filtered" 2>/dev/null || log warn "crontab 更新失败"
             rm -f "${cron_temp}.filtered"
@@ -2511,17 +2079,14 @@ safe_crontab_remove() {
     return 0
 }
 
-# 启用动态调整模式
 enable_dynamic_mode() {
     log info "启用动态调整模式..."
 
-    # 创建动态调整脚本
     create_dynamic_adjust_script || {
         log error "创建动态调整脚本失败"
         return 1
     }
 
-    # 添加 crontab 条目
     local cron_entry="*/5 * * * * $INSTALL_DIR/dynamic-adjust.sh"
     safe_crontab_add "$cron_entry" || {
         log error "添加 crontab 失败"
@@ -2532,11 +2097,9 @@ enable_dynamic_mode() {
     log info "动态调整模式已启用 (每 5 分钟检查)"
 }
 
-# 停用动态调整模式
 disable_dynamic_mode() {
     log info "停用动态调整模式..."
 
-    # 删除 crontab 条目
     safe_crontab_remove "dynamic-adjust.sh"
 
     DYNAMIC_MODE=false
@@ -2544,10 +2107,9 @@ disable_dynamic_mode() {
 }
 
 # ============================================================================
-# 增强监控面板模块
+# 监控面板模块 (Monitor)
 # ============================================================================
 
-# 清理监控面板资源
 cleanup_monitor() {
     clear_cache
     log info "监控面板已退出"
@@ -2556,31 +2118,21 @@ cleanup_monitor() {
 show_monitor() {
     clear
 
-    # 捕获多个信号进行优雅退出（包括 HUP 用于终端重连场景）
     trap 'cleanup_monitor; return 0' INT TERM QUIT HUP
 
-    # 上次显示的数据（用于检测变化）
     local last_mem_used=0
     local last_zram_used=0
     local last_swap_used=0
     local last_swappiness=0
-    local refresh_interval=1  # 刷新间隔（秒）
-    local force_refresh=true    # 强制首次刷新
+    local refresh_interval=1
+    local force_refresh=true
 
     while true; do
-        # 使用缓存获取内存信息
         read -r mem_total mem_used mem_avail buff_cache <<< $(get_memory_info true)
-
-        # 使用缓存获取 ZRAM 信息
         read -r zram_total_kb zram_used_kb <<< $(get_zram_usage)
-
-        # 使用缓存获取 Swap 信息
         read -r swap_total swap_used <<< $(get_swap_info true)
-
-        # 获取 swappiness（不使用缓存，因为可能动态调整）
         local swappiness=$(sysctl -n vm.swappiness 2>/dev/null || echo "60")
 
-        # 检查数据是否变化
         local data_changed=false
         if [[ $force_refresh == true ]] || \
            [[ $mem_used -ne $last_mem_used ]] || \
@@ -2591,38 +2143,26 @@ show_monitor() {
             force_refresh=false
         fi
 
-        # 仅在数据变化时刷新界面
         if [[ $data_changed == true ]]; then
             clear
 
-            # 顶部标题
-            echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-            echo -e "${CYAN}│${WHITE}       Z-Panel Pro 实时监控面板 v${SCRIPT_VERSION}${CYAN}                │${NC}"
-            echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-            echo -e "${CYAN}│${WHITE}  内存: ${GREEN}${TOTAL_MEMORY_MB}MB${NC} ${WHITE}CPU: ${GREEN}${CPU_CORES}核心${NC} ${WHITE}模式: ${YELLOW}${STRATEGY_MODE}${CYAN}          │${NC}"
-            echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-            echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+            ui_header "Z-Panel Pro 实时监控面板 v${SCRIPT_VERSION}"
+            ui_row " 内存: ${GREEN}${TOTAL_MEMORY_MB}MB${NC} CPU: ${GREEN}${CPU_CORES}核心${NC} 模式: ${YELLOW}${STRATEGY_MODE}${NC}"
+            ui_line
 
-            # RAM 使用情况
-            echo -e "${CYAN}│${WHITE}  📊 RAM 使用情况${CYAN}                                        │${NC}"
-            echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-            echo -e "${CYAN}│${NC}  使用: ${GREEN}${mem_used}MB${NC}  缓存: ${CYAN}${buff_cache}MB${NC}  空闲: ${GREEN}${mem_avail}MB${NC}           ${CYAN}│${NC}"
-            echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-            echo -e "${CYAN}│${NC}  物理内存负载:                                          ${CYAN}│${NC}"
-            echo -e "${CYAN}│${NC}  "
+            ui_section "📊 RAM 使用情况"
+            ui_row " 使用: ${GREEN}${mem_used}MB${NC}  缓存: ${CYAN}${buff_cache}MB${NC}  空闲: ${GREEN}${mem_avail}MB${NC}"
+            ui_row " 物理内存负载:"
+            echo -ne "  "
             show_progress_bar "$mem_used" "$mem_total" 46 ""
-            echo -e "${CYAN}│${NC}"
-            echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+            ui_line
 
-            # ZRAM 状态
-            echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
+            ui_section "💾 ZRAM 状态"
 
             if swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
-                echo -e "${CYAN}│${WHITE}  💾 ZRAM 状态: ${GREEN}运行中${CYAN}                                  │${NC}"
-                echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+                ui_row " 状态: ${GREEN}运行中${NC}"
 
                 local zram_status=$(get_zram_status)
-                # 使用单次 awk 调用解析 JSON，提高性能
                 local algo_ratio=$(echo "$zram_status" | awk '{
                     gsub(/[[:space:]]/, "", $0)
                     gsub(/[{}"]/, "", $0)
@@ -2641,63 +2181,42 @@ show_monitor() {
                 local ratio="${ratio:-"1.00"}"
                 [[ -z "$ratio" || "$ratio" == "0" ]] && ratio="1.00"
 
-                echo -e "${CYAN}│${NC}  算法: ${CYAN}${algo}${NC}  压缩比: ${YELLOW}${ratio}x${NC}                              ${CYAN}│${NC}"
-                echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-                echo -e "${CYAN}│${NC}  ZRAM 压缩比:                                            ${CYAN}│${NC}"
-                echo -e "${CYAN}│${NC}  "
+                ui_row " 算法: ${CYAN}${algo}${NC}  压缩比: ${YELLOW}${ratio}x${NC}"
+                ui_row " ZRAM 压缩比:"
+                echo -ne "  "
                 show_compression_chart "$ratio" 46
-                echo -e "${CYAN}│${NC}"
-                echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-                echo -e "${CYAN}│${NC}  ZRAM 负载:                                               ${CYAN}│${NC}"
-                echo -e "${CYAN}│${NC}  "
+                ui_row " ZRAM 负载:"
+                echo -ne "  "
                 show_progress_bar "$zram_used_kb" "$zram_total_kb" 46 ""
-                echo -e "${CYAN}│${NC}"
-                echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
             else
-                echo -e "${CYAN}│${WHITE}  💾 ZRAM 状态: ${RED}未启用${CYAN}                                      │${NC}"
-                echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+                ui_row " 状态: ${RED}未启用${NC}"
             fi
 
-            # Swap 状态
-            echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
+            ui_section "🔄 Swap 负载"
 
             if [[ $swap_total -gt 0 ]]; then
-                echo -e "${CYAN}│${WHITE}  🔄 Swap 负载:                                              ${CYAN}│${NC}"
-                echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-                echo -e "${CYAN}│${NC}  "
+                echo -ne "  "
                 show_progress_bar "$swap_used" "$swap_total" 46 ""
-                echo -e "${CYAN}│${NC}"
-                echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
             else
-                echo -e "${CYAN}│${WHITE}  🔄 Swap 状态: ${RED}未启用${CYAN}                                        │${NC}"
-                echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+                ui_row " 状态: ${RED}未启用${NC}"
             fi
 
-            # 内核参数
-            echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-            echo -e "${CYAN}│${WHITE}  ⚙️  内核参数${CYAN}                                               │${NC}"
-            echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-
-            echo -e "${CYAN}│${NC}  swappiness:                                              ${CYAN}│${NC}"
-            echo -e "${CYAN}│${NC}  "
+            ui_section "⚙️  内核参数"
+            ui_row " swappiness:"
+            echo -ne "  "
             show_progress_bar "$swappiness" 100 46 ""
-            echo -e "${CYAN}│${NC}"
-            echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
 
-            # 底部提示
-            echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
+            ui_bot
             echo ""
             echo -e "${YELLOW}💡 按 ${WHITE}Ctrl+C${YELLOW} 返回主菜单${NC}"
             echo ""
 
-            # 更新上次显示的数据
             last_mem_used=$mem_used
             last_zram_used_kb=$zram_used_kb
             last_swap_used=$swap_used
             last_swappiness=$swappiness
         fi
 
-        # 短暂休眠后继续循环
         sleep $refresh_interval
     done
 }
@@ -2705,28 +2224,18 @@ show_monitor() {
 show_status() {
     clear
 
-    echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}│${WHITE}$(pad_center "Z-Panel Pro 系统状态 v${SCRIPT_VERSION}" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
+    ui_header "Z-Panel Pro 系统状态 v${SCRIPT_VERSION}"
 
-    # 系统信息
-    echo -e "${CYAN}│${WHITE}$(pad_left "  📋 系统信息" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  发行版: ${GREEN}${CURRENT_DISTRO} ${CURRENT_VERSION}${NC}$(pad_left "" 31)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  内存: ${GREEN}${TOTAL_MEMORY_MB}MB${NC}  CPU: ${GREEN}${CPU_CORES}核心${NC}  策略: ${YELLOW}${STRATEGY_MODE}${NC}$(pad_left "" 8)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
+    ui_section "📋 系统信息"
+    ui_row " 发行版: ${GREEN}${CURRENT_DISTRO} ${CURRENT_VERSION}${NC}"
+    ui_row " 内存: ${GREEN}${TOTAL_MEMORY_MB}MB${NC}  CPU: ${GREEN}${CPU_CORES}核心${NC}  策略: ${YELLOW}${STRATEGY_MODE}${NC}"
 
-    # ZRAM 状态
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${WHITE}$(pad_left "  💾 ZRAM 状态" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
+    ui_section "💾 ZRAM 状态"
 
     if swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
-        echo -e "${CYAN}│${NC}  状态: ${GREEN}运行中${NC}$(pad_left "" 45)${CYAN}│${NC}"
+        ui_row " 状态: ${GREEN}运行中${NC}"
 
         local zram_status=$(get_zram_status)
-        # 使用单次 awk 调用解析 JSON，提高性能
         local disk_size data_size comp_size algo ratio
         eval "$(echo "$zram_status" | awk '{
             gsub(/[[:space:]]/, "", $0)
@@ -2754,142 +2263,82 @@ show_status() {
                 }
             }
         }')"
-        # 设置默认值
         [[ -z "$disk_size" ]] && disk_size="0"
         [[ -z "$data_size" ]] && data_size="0"
         [[ -z "$comp_size" ]] && comp_size="0"
         [[ -z "$algo" ]] && algo="unknown"
         [[ -z "$ratio" || "$ratio" == "0" ]] && ratio="1.00"
 
-        echo -e "${CYAN}│${NC}  算法: ${CYAN}${algo}${NC}  大小: ${CYAN}${disk_size}${NC}$(pad_left "" 30)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  数据: ${CYAN}${data_size}${NC}  压缩: ${CYAN}${comp_size}${NC}$(pad_left "" 28)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  压缩比:$(pad_left "" 48)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  "
+        ui_row " 算法: ${CYAN}${algo}${NC}  大小: ${CYAN}${disk_size}${NC}"
+        ui_row " 数据: ${CYAN}${data_size}${NC}  压缩: ${CYAN}${comp_size}${NC}"
+        ui_row " 压缩比:"
+        echo -ne "  "
         show_compression_chart "$ratio" 46
-        echo -e "${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
     else
-        echo -e "${CYAN}│${NC}  状态: ${RED}未启用${NC}$(pad_left "" 45)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
+        ui_row " 状态: ${RED}未启用${NC}"
     fi
 
-    # Swap 状态
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${WHITE}$(pad_left "  🔄 Swap 状态" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
+    ui_section "🔄 Swap 状态"
 
     read -r swap_total swap_used <<< "$(get_swap_info false)"
 
     if [[ $swap_total -eq 0 ]]; then
-        echo -e "${CYAN}│${NC}  状态: ${RED}未启用${NC}$(pad_left "" 45)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
+        ui_row " 状态: ${RED}未启用${NC}"
     else
-        echo -e "${CYAN}│${NC}  总量: ${CYAN}${swap_total}MB${NC}  已用: ${CYAN}${swap_used}MB${NC}$(pad_left "" 25)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  Swap 负载:$(pad_left "" 44)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  "
+        ui_row " 总量: ${CYAN}${swap_total}MB${NC}  已用: ${CYAN}${swap_used}MB${NC}"
+        ui_row " Swap 负载:"
+        echo -ne "  "
         show_progress_bar "$swap_used" "$swap_total" 46 ""
-        echo -e "${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
     fi
 
-    # 内核参数
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${WHITE}$(pad_left "  ⚙️  内核参数" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
+    ui_section "⚙️  内核参数"
 
     local swappiness=$(sysctl -n vm.swappiness 2>/dev/null || echo "60")
     local vfs_cache=$(sysctl -n vm.vfs_cache_pressure 2>/dev/null || echo "100")
     local dirty_ratio=$(sysctl -n vm.dirty_ratio 2>/dev/null || echo "20")
 
-    echo -e "${CYAN}│${NC}  vm.swappiness:$(pad_left "" 42)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  "
+    ui_row " vm.swappiness:"
+    echo -ne "  "
     show_progress_bar "$swappiness" 100 46 ""
-    echo -e "${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
 
-    # 保护机制
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${WHITE}$(pad_left "  🛡️  保护机制" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} I/O 熔断: ${GREEN}已启用${NC}$(pad_left "" 35)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} OOM 保护: ${GREEN}已启用${NC}$(pad_left "" 36)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} 物理内存熔断: ${GREEN}已启用${NC}$(pad_left "" 30)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
+    ui_section "🛡️  保护机制"
+    ui_row "  ${GREEN}•${NC} I/O 熔断: ${GREEN}已启用${NC}"
+    ui_row "  ${GREEN}•${NC} OOM 保护: ${GREEN}已启用${NC}"
+    ui_row "  ${GREEN}•${NC} 物理内存熔断: ${GREEN}已启用${NC}"
 
-    echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
+    ui_bot
     echo ""
 }
 
 # ============================================================================
-# 菜单系统
+# 菜单系统模块 (Menu)
 # ============================================================================
 
 show_main_menu() {
     clear
 
-    # 顶部标题栏
-    echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}│${WHITE}$(pad_center "Z-Panel Pro v${SCRIPT_VERSION} 主控菜单" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${WHITE}$(pad_left "系统: RAM:${TOTAL_MEMORY_MB}MB CPU:${CPU_CORES}Cores ${CURRENT_DISTRO} ${CURRENT_VERSION}" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
+    ui_header "Z-Panel Pro v${SCRIPT_VERSION} 主控菜单"
+    ui_row "系统: RAM:${TOTAL_MEMORY_MB}MB CPU:${CPU_CORES}Cores ${CURRENT_DISTRO} ${CURRENT_VERSION}"
+    ui_line
 
-    # 主要功能
-    echo -e "${CYAN}│${WHITE}$(pad_left "🚀 主要功能" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
+    ui_section "🚀 主要功能"
+    ui_menu_item "1" "一键优化[${YELLOW}当前: ${STRATEGY_MODE}${NC}]"
+    ui_menu_item "2" "状态监控"
+    ui_menu_item "3" "日志管理"
 
-    local item1="  ${GREEN}1.${NC} 一键优化[${YELLOW}当前: ${STRATEGY_MODE}${NC}]"
-    echo -e "${CYAN}│${NC}${item1}$(pad_right "" $((57 - $(string_display_width "$item1"))))${CYAN}│${NC}"
+    ui_section "⚙️  高级功能"
+    ui_menu_item "4" "切换优化模式[${YELLOW}保守/平衡/激进${NC}]"
+    ui_menu_item "5" "配置 ZRAM"
+    ui_menu_item "6" "配置虚拟内存"
+    ui_menu_item "7" "动态调整模式"
 
-    local item2="  ${GREEN}2.${NC} 状态监控"
-    echo -e "${CYAN}│${NC}${item2}$(pad_right "" $((57 - $(string_display_width "$item2"))))${CYAN}│${NC}"
+    ui_section "🛠️  系统管理"
+    ui_menu_item "8" "查看系统状态"
+    ui_menu_item "9" "停用 ZRAM"
+    ui_menu_item "10" "还原备份"
+    ui_menu_item "0" "退出程序"
 
-    local item3="  ${GREEN}3.${NC} 日志管理"
-    echo -e "${CYAN}│${NC}${item3}$(pad_right "" $((57 - $(string_display_width "$item3"))))${CYAN}│${NC}"
-
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-
-    # 高级功能
-    echo -e "${CYAN}│${WHITE}$(pad_left "⚙️  高级功能" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-
-    local item4="  ${GREEN}4.${NC} 切换优化模式[${YELLOW}保守/平衡/激进${NC}]"
-    echo -e "${CYAN}│${NC}${item4}$(pad_right "" $((57 - $(string_display_width "$item4"))))${CYAN}│${NC}"
-
-    local item5="  ${GREEN}5.${NC} 配置 ZRAM"
-    echo -e "${CYAN}│${NC}${item5}$(pad_right "" $((57 - $(string_display_width "$item5"))))${CYAN}│${NC}"
-
-    local item6="  ${GREEN}6.${NC} 配置虚拟内存"
-    echo -e "${CYAN}│${NC}${item6}$(pad_right "" $((57 - $(string_display_width "$item6"))))${CYAN}│${NC}"
-
-    local item7="  ${GREEN}7.${NC} 动态调整模式"
-    echo -e "${CYAN}│${NC}${item7}$(pad_right "" $((57 - $(string_display_width "$item7"))))${CYAN}│${NC}"
-
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-
-    # 系统管理
-    echo -e "${CYAN}│${WHITE}$(pad_left "🛠️  系统管理" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-
-    local item8="  ${GREEN}8.${NC} 查看系统状态"
-    echo -e "${CYAN}│${NC}${item8}$(pad_right "" $((57 - $(string_display_width "$item8"))))${CYAN}│${NC}"
-
-    local item9="  ${GREEN}9.${NC} 停用 ZRAM"
-    echo -e "${CYAN}│${NC}${item9}$(pad_right "" $((57 - $(string_display_width "$item9"))))${CYAN}│${NC}"
-
-    local item10="  ${GREEN}10.${NC} 还原备份"
-    echo -e "${CYAN}│${NC}${item10}$(pad_right "" $((57 - $(string_display_width "$item10"))))${CYAN}│${NC}"
-
-    local item0="  ${GREEN}0.${NC} 退出程序"
-    echo -e "${CYAN}│${NC}${item0}$(pad_right "" $((57 - $(string_display_width "$item0"))))${CYAN}│${NC}"
-
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-
-    # 状态栏
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
+    ui_line
     local zram_status
     if [[ $ZRAM_ENABLED == true ]]; then
         zram_status="${GREEN}●${NC} 已启用"
@@ -2902,9 +2351,8 @@ show_main_menu() {
     else
         dynamic_status="${RED}○${NC} 未启用"
     fi
-    local status_text="  ZRAM: ${zram_status}  │  动态: ${dynamic_status}"
-    echo -e "${CYAN}│${NC}$(pad_center "$status_text" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
+    ui_row " ZRAM: ${zram_status}  │  动态: ${dynamic_status}"
+    ui_bot
     echo ""
     echo -ne "${WHITE}请选择 [0-10]: ${NC}"
 }
@@ -2913,25 +2361,21 @@ strategy_menu() {
     while true; do
         clear
 
-        echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-        echo -e "${CYAN}│${WHITE}$(pad_center "选择优化模式" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}1.${NC} Conservative (保守)$(pad_left "" 31)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}     • 最稳定，适合路由器/NAS$(pad_left "" 30)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}     • ZRAM: 80% | Swap: 100% | Swappiness: 60$(pad_left "" 9)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}2.${NC} Balance (平衡)  ${YELLOW}[推荐]${NC}$(pad_left "" 26)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}     • 性能与稳定兼顾，日常使用$(pad_left "" 24)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}     • ZRAM: 120% | Swap: 150% | Swappiness: 85$(pad_left "" 8)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}3.${NC} Aggressive (激进)$(pad_left "" 33)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}     • 极限榨干内存，适合极度缺内存$(pad_left "" 17)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}     • ZRAM: 180% | Swap: 200% | Swappiness: 100$(pad_left "" 7)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}0.${NC} 返回$(pad_left "" 50)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
+        ui_header "选择优化模式"
+        ui_menu_item "1" "Conservative (保守)"
+        ui_row "     • 最稳定，适合路由器/NAS"
+        ui_row "     • ZRAM: 80% | Swap: 100% | Swappiness: 60"
+        ui_line
+        ui_menu_item "2" "Balance (平衡)  ${YELLOW}[推荐]${NC}"
+        ui_row "     • 性能与稳定兼顾，日常使用"
+        ui_row "     • ZRAM: 120% | Swap: 150% | Swappiness: 85"
+        ui_line
+        ui_menu_item "3" "Aggressive (激进)"
+        ui_row "     • 极限榨干内存，适合极度缺内存"
+        ui_row "     • ZRAM: 180% | Swap: 200% | Swappiness: 100"
+        ui_line
+        ui_menu_item "0" "返回"
+        ui_bot
         echo ""
         echo -ne "${WHITE}请选择 [0-3]: ${NC}"
         read -r choice
@@ -2979,16 +2423,12 @@ zram_menu() {
     while true; do
         clear
 
-        echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-        echo -e "${CYAN}│${WHITE}$(pad_center "ZRAM 配置" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}1.${NC} 启用 ZRAM (自动检测算法)$(pad_left "" 20)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}2.${NC} 自定义配置$(pad_left "" 38)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}3.${NC} 查看 ZRAM 状态$(pad_left "" 36)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}0.${NC} 返回$(pad_left "" 50)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
+        ui_header "ZRAM 配置"
+        ui_menu_item "1" "启用 ZRAM (自动检测算法)"
+        ui_menu_item "2" "自定义配置"
+        ui_menu_item "3" "查看 ZRAM 状态"
+        ui_menu_item "0" "返回"
+        ui_bot
         echo ""
         echo -ne "${WHITE}请选择 [0-3]: ${NC}"
         read -r choice
@@ -3016,7 +2456,6 @@ zram_menu() {
                 pause
                 ;;
             3)
-                # 使用 jq 或 python3 格式化 JSON，如果没有则直接显示
                 if command -v jq &> /dev/null; then
                     get_zram_status | jq .
                 elif command -v python3 &> /dev/null; then
@@ -3041,16 +2480,12 @@ dynamic_menu() {
     while true; do
         clear
 
-        echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-        echo -e "${CYAN}│${WHITE}$(pad_center "动态调整模式" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}1.${NC} 启用动态调整$(pad_left "" 38)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}2.${NC} 停用动态调整$(pad_left "" 38)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}3.${NC} 查看调整日志$(pad_left "" 38)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}  ${GREEN}0.${NC} 返回$(pad_left "" 50)${CYAN}│${NC}"
-        echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-        echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
+        ui_header "动态调整模式"
+        ui_menu_item "1" "启用动态调整"
+        ui_menu_item "2" "停用动态调整"
+        ui_menu_item "3" "查看调整日志"
+        ui_menu_item "0" "返回"
+        ui_bot
         echo ""
         echo -ne "${WHITE}请选择 [0-3]: ${NC}"
         read -r choice
@@ -3069,16 +2504,11 @@ dynamic_menu() {
             3)
                 if [[ -f "$LOG_DIR/dynamic.log" ]]; then
                     clear
-                    echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-                    echo -e "${CYAN}│${WHITE}              动态调整日志${CYAN}                              │${NC}"
-                    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-                    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
+                    ui_header "动态调整日志"
                     tail -20 "$LOG_DIR/dynamic.log" | while IFS= read -r line; do
-                        echo -e "${CYAN}│${NC}  ${line}${CYAN}                                                │${NC}"
+                        ui_row "  ${line}"
                     done
-                    echo -e "${CYAN}│${NC}                                                         ${CYAN}│${NC}"
-                    echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
-                    echo ""
+                    ui_bot
                 else
                     echo -e "${YELLOW}暂无日志${NC}"
                 fi
@@ -3098,19 +2528,15 @@ dynamic_menu() {
 quick_optimize() {
     clear
 
-    echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}│${WHITE}$(pad_center "一键优化" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${WHITE}$(pad_left "  将执行以下操作:" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} 创建系统备份$(pad_left "" 40)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} 配置 ZRAM (策略: ${YELLOW}${STRATEGY_MODE}${NC})$(pad_left "" 16)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} 配置虚拟内存策略 (含 I/O 熔断/OOM 保护)$(pad_left "" 7)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} 启用动态调整模式$(pad_left "" 35)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}•${NC} 配置开机自启动$(pad_left "" 38)${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
-    echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
+    ui_header "一键优化"
+    ui_row " 将执行以下操作:"
+    ui_line
+    ui_row "  ${GREEN}•${NC} 创建系统备份"
+    ui_row "  ${GREEN}•${NC} 配置 ZRAM (策略: ${YELLOW}${STRATEGY_MODE}${NC})"
+    ui_row "  ${GREEN}•${NC} 配置虚拟内存策略 (含 I/O 熔断/OOM 保护)"
+    ui_row "  ${GREEN}•${NC} 启用动态调整模式"
+    ui_row "  ${GREEN}•${NC} 配置开机自启动"
+    ui_bot
     echo ""
     if ! confirm "确认执行？"; then
         return
@@ -3118,25 +2544,21 @@ quick_optimize() {
 
     local errors=0
 
-    # 1. 创建备份
     if ! create_backup; then
         log warn "备份创建失败，继续执行优化"
         ((errors++)) || true
     fi
 
-    # 2. 配置 ZRAM（包含压缩算法、物理内存熔断）
     if ! configure_zram "auto" "$STRATEGY_MODE"; then
         log error "ZRAM 配置失败"
         ((errors++)) || true
     fi
 
-    # 3. 配置虚拟内存（包含 I/O 熔断保护、OOM 保护、内核参数优化）
     if ! configure_virtual_memory "$STRATEGY_MODE"; then
         log error "虚拟内存配置失败"
         ((errors++)) || true
     fi
 
-    # 4. 启用动态调整模式（自动优化 swappiness）
     if ! enable_dynamic_mode; then
         log warn "动态调整模式启用失败"
         ((errors++)) || true
@@ -3158,14 +2580,13 @@ quick_optimize() {
 }
 
 # ============================================================================
-# 全局快捷键安装
+# 全局快捷键安装模块 (Shortcut)
 # ============================================================================
 
 install_global_shortcut() {
     local shortcut_path="/usr/local/bin/z"
     local script_path=$(realpath "$0" 2>/dev/null || readlink -f "$0" 2>/dev/null || echo "$0")
 
-    # 检查 /usr/local/bin 是否在 PATH 中
     local path_has_bin=false
     local IFS=':'
     for dir in $PATH; do
@@ -3184,21 +2605,17 @@ install_global_shortcut() {
         echo ""
     fi
 
-    # 检查快捷键是否已存在
     if [[ -f "$shortcut_path" ]]; then
-        # 检查是否指向当前脚本
         local existing_link=$(readlink "$shortcut_path" 2>/dev/null || cat "$shortcut_path" 2>/dev/null)
         if [[ "$existing_link" == "$script_path" ]]; then
             log info "全局快捷键 'z' 已存在且指向当前脚本"
             return 0
         fi
 
-        # 快捷键已存在但指向不同位置，自动备份并覆盖
         log warn "全局快捷键 'z' 已存在: $shortcut_path"
         echo -e "${YELLOW}检测到现有快捷键指向:${NC} $existing_link"
         echo -e "${YELLOW}当前脚本路径:${NC} $script_path"
 
-        # 备份现有快捷键
         local backup_path="${shortcut_path}.bak.$(date +%Y%m%d_%H%M%S)"
         if cp "$shortcut_path" "$backup_path" 2>/dev/null; then
             log info "已备份现有快捷键到: $backup_path"
@@ -3208,7 +2625,6 @@ install_global_shortcut() {
         fi
     fi
 
-    # 创建全局快捷键
     cat > "$shortcut_path" <<EOF
 #!/bin/bash
 # Z-Panel Pro 全局快捷键
@@ -3223,7 +2639,6 @@ fi
 exec bash "$script_path"
 EOF
 
-    # 设置快捷键脚本权限：允许所有用户执行，但仅 root 可修改
     chmod 755 "$shortcut_path" 2>/dev/null || true
     log info "全局快捷键 'z' 已安装到 $shortcut_path"
 
@@ -3236,7 +2651,7 @@ EOF
 }
 
 # ============================================================================
-# 信号处理模块
+# 信号处理模块 (Signal Handler)
 # ============================================================================
 
 cleanup_on_exit() {
@@ -3246,39 +2661,30 @@ cleanup_on_exit() {
     log info "清理完成"
 }
 
-# 注册信号处理器
 trap cleanup_on_exit INT TERM QUIT
 
 # ============================================================================
-# 主程序
+# 主程序入口 (Main)
 # ============================================================================
 
 main() {
-    # 检查是否以 root 权限运行
     if [[ $EUID -ne 0 ]]; then
         echo -e "${RED}此脚本需要 root 权限运行${NC}"
         echo "请使用: sudo bash $0"
         exit 1
     fi
 
-    # 获取文件锁，防止重复启动
     if ! acquire_lock; then
         echo -e "${RED}无法获取文件锁，脚本可能已在运行${NC}"
         exit 1
     fi
 
-    # 初始化图标系统（检测 Nerd Font 环境）
     init_icons
-
-    # 检查依赖（使用增强的 command -v 检测）
     check_dependencies || exit 1
-
     detect_system
 
-    # 创建目录并设置安全权限
     mkdir -p "$INSTALL_DIR"/{conf,logs,backup,lib}
 
-    # 设置严格的目录权限
     chmod 750 "$INSTALL_DIR" 2>/dev/null || true
     chmod 700 "$INSTALL_DIR/conf" 2>/dev/null || true
     chmod 750 "$INSTALL_DIR/logs" 2>/dev/null || true
@@ -3287,7 +2693,6 @@ main() {
 
     log info "目录权限已设置"
 
-    # 创建全局快捷键 'z'
     install_global_shortcut
 
     load_strategy_config
