@@ -51,21 +51,7 @@ Z-Panel Pro 是一款功能强大的企业级 Linux 内存优化工具，通过�
 - 主脚本：https://github.com/Big-flower-pig/Z-Panel-Pro/blob/main/Z-Panel.sh
 - 完整项目：https://github.com/Big-flower-pig/Z-Panel-Pro
 
-### 方法一：一键安装（推荐）
-
-```bash
-# 下载安装脚本（使用 wget）
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/install.sh -O install.sh
-
-# 或使用 curl
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/install.sh -o install.sh
-
-# 执行安装
-chmod +x install.sh
-sudo ./install.sh
-```
-
-### 方法二：手动安装
+### 方法一：手动安装（推荐）
 
 ```bash
 # 克隆仓库
@@ -82,7 +68,7 @@ sudo chmod +x /opt/Z-Panel-Pro/Z-Panel.sh
 sudo ln -sf /opt/Z-Panel-Pro/Z-Panel.sh /usr/local/bin/zpanel
 ```
 
-### 方法三：直接下载主脚本（快速体验）
+### 方法二：直接下载主脚本（快速体验）
 
 ```bash
 # 下载主脚本（使用 wget）
@@ -135,7 +121,7 @@ chmod +x Z-Panel.sh
 sudo ./Z-Panel.sh
 ```
 
-### 方法四：使用包管理器
+### 方法三：使用包管理器
 
 ```bash
 # Ubuntu/Debian
