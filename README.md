@@ -46,14 +46,19 @@ Z-Panel Pro 是一款功能强大的企业级 Linux 内存优化工具，通过�
 
 ## 🔧 安装
 
+**文件查看链接**：在浏览器中查看脚本内容
+
+- 主脚本：https://github.com/Big-flower-pig/Z-Panel-Pro/blob/main/Z-Panel.sh
+- 完整项目：https://github.com/Big-flower-pig/Z-Panel-Pro
+
 ### 方法一：一键安装（推荐）
 
 ```bash
 # 下载安装脚本（使用 wget）
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/install.sh -O install.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/install.sh -O install.sh
 
 # 或使用 curl
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/install.sh -o install.sh
 
 # 执行安装
 chmod +x install.sh
@@ -81,46 +86,46 @@ sudo ln -sf /opt/Z-Panel-Pro/Z-Panel.sh /usr/local/bin/zpanel
 
 ```bash
 # 下载主脚本（使用 wget）
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/Z-Panel.sh -O Z-Panel.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh -O Z-Panel.sh
 
 # 或使用 curl
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/Z-Panel.sh -o Z-Panel.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh -o Z-Panel.sh
 
 # 下载依赖库文件
 mkdir -p lib
 cd lib
 
 # 使用 wget 下载
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/core.sh
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/error_handler.sh
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/utils.sh
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/lock.sh
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/system.sh
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/data_collector.sh
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/ui.sh
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/strategy.sh
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/zram.sh
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/kernel.sh
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/swap.sh
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/backup.sh
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/monitor.sh
-wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/menu.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/core.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/error_handler.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/utils.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/lock.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/system.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/data_collector.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/ui.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/strategy.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/zram.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/kernel.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/swap.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/backup.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/monitor.sh
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/menu.sh
 
 # 或使用 curl 下载
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/core.sh -o core.sh
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/error_handler.sh -o error_handler.sh
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/utils.sh -o utils.sh
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/lock.sh -o lock.sh
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/system.sh -o system.sh
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/data_collector.sh -o data_collector.sh
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/ui.sh -o ui.sh
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/strategy.sh -o strategy.sh
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/zram.sh -o zram.sh
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/kernel.sh -o kernel.sh
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/swap.sh -o swap.sh
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/backup.sh -o backup.sh
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/monitor.sh -o monitor.sh
-curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/menu.sh -o menu.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/core.sh -o core.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/error_handler.sh -o error_handler.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/utils.sh -o utils.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/lock.sh -o lock.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/system.sh -o system.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/data_collector.sh -o data_collector.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/ui.sh -o ui.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/strategy.sh -o strategy.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/zram.sh -o zram.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/kernel.sh -o kernel.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/swap.sh -o swap.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/backup.sh -o backup.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/monitor.sh -o monitor.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/menu.sh -o menu.sh
 cd ..
 
 # 设置执行权限
