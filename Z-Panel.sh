@@ -280,9 +280,29 @@ string_display_width() {
     local width=0
     local i=0
     local len=${#str}
+    local in_escape=false
 
     while [[ $i -lt $len ]]; do
         local char="${str:$i:1}"
+
+        # 检测 ANSI 转义序列开始
+        if [[ "$char" == $'\033' ]] || [[ "$char" == $'\e' ]]; then
+            in_escape=true
+            ((i++))
+            continue
+        fi
+
+        # 在转义序列中，检查是否结束
+        if [[ "$in_escape" == true ]]; then
+            # 转义序列以 [m 结束（颜色代码）
+            if [[ "$char" == "m" ]]; then
+                in_escape=false
+            fi
+            ((i++))
+            continue
+        fi
+
+        # 计算可见字符宽度
         # 检查是否为多字节字符（中文字符等）
         if [[ $(printf '%s' "$char" | wc -m) -gt 1 ]] || [[ $(printf '%s' "$char" | wc -c) -gt 1 ]]; then
             # 多字节字符通常占用2个显示宽度
