@@ -45,13 +45,4 @@ sudo bash Z-Panel.sh
 - 配置文件由脚本自动生成。若新增配置项，请同时实现 `save_*_config` 与 `load_*_config`。
 - 修改涉及 system 文件（`/etc/sysctl.conf`, systemd unit 等）时，请在 PR 中写明外部副作用，并建议回滚步骤（脚本内已有 `create_backup` / `restore_backup`）。
 
-验证与回归
 
-- 在真实或容器化 Linux 环境（需内核支持 zram 模块）进行集成验证。推荐先在 VM 中测试自动化流程。
-
-更多信息
-
-- 主脚本：`Z-Panel.sh`（仓库根）
-- Copilot 指令：`.github/copilot-instructions.md`
-
-如果你想要我把 README 增强为英文版或添加 Docker/CI 验证示例，告诉我你的首选目标平台（例如 Ubuntu 22.04 / Debian 12 / CentOS 7）。
