@@ -1490,6 +1490,7 @@ configure_zram() {
         }
     fi
 
+    # 确保 ZRAM 模块已加载
     if ! lsmod | grep -q zram; then
         modprobe zram || {
             log error "无法加载 ZRAM 模块"
@@ -1497,59 +1498,84 @@ configure_zram() {
         }
     fi
 
+    # 获取或创建 ZRAM 设备
+    local zram_device
+    zram_device=$(get_available_zram_device) || {
+        log error "无法获取可用的 ZRAM 设备"
+        return 1
+    }
+    log info "使用 ZRAM 设备: $zram_device"
+
+    # 停用已存在的 ZRAM swap
     if swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
         for device in $(swapon --show=NAME --noheadings 2>/dev/null | grep zram); do
             swapoff "$device" 2>/dev/null || true
         done
     fi
 
-    if [[ -e /sys/block/zram0/reset ]]; then
-        echo 1 > /sys/block/zram0/reset 2>/dev/null || true
+    # 重置 ZRAM 设备
+    if [[ -e "/sys/block/$zram_device/reset" ]]; then
+        echo 1 > "/sys/block/$zram_device/reset" 2>/dev/null || true
         sleep 0.3
     fi
 
-    if [[ -e /sys/block/zram0/comp_algorithm ]]; then
-        local supported=$(cat /sys/block/zram0/comp_algorithm 2>/dev/null)
+    # 检查设备路径是否存在
+    if [[ ! -e "/dev/$zram_device" ]]; then
+        log error "ZRAM 设备不存在: /dev/$zram_device"
+        return 1
+    fi
+
+    # 设置压缩算法
+    if [[ -e "/sys/block/$zram_device/comp_algorithm" ]]; then
+        local supported=$(cat "/sys/block/$zram_device/comp_algorithm" 2>/dev/null)
         if echo "$supported" | grep -q "$algorithm"; then
-            echo "$algorithm" > /sys/block/zram0/comp_algorithm 2>/dev/null || {
+            echo "$algorithm" > "/sys/block/$zram_device/comp_algorithm" 2>/dev/null || {
                 log warn "设置压缩算法失败，使用默认算法"
             }
             log info "设置压缩算法: $algorithm"
         else
             # 修复正则表达式，避免 grep "Invalid range end" 错误
-            local fallback=$(echo "$supported" | grep -oE '\[[^]]+\]' | head -1 | sed 's/[\[\]]//g')
+            # 使用 sed 替代 grep -oE 以提高兼容性
+            local fallback=$(echo "$supported" | sed -n 's/.*\[\([^]]*\)\].*/\1/p' | head -1)
             [[ -z "$fallback" ]] && fallback="lzo"
-            echo "$fallback" > /sys/block/zram0/comp_algorithm 2>/dev/null || true
+            echo "$fallback" > "/sys/block/$zram_device/comp_algorithm" 2>/dev/null || true
             algorithm="$fallback"
             log info "使用回退算法: $algorithm"
         fi
     fi
 
-    if [[ -e /sys/block/zram0/max_comp_streams ]]; then
-        echo "$CPU_CORES" > /sys/block/zram0/max_comp_streams 2>/dev/null || true
+    # 设置压缩流数
+    if [[ -e "/sys/block/$zram_device/max_comp_streams" ]]; then
+        echo "$CPU_CORES" > "/sys/block/$zram_device/max_comp_streams" 2>/dev/null || true
         log info "设置压缩流数: $CPU_CORES"
     fi
 
+    # 设置 ZRAM 大小
     local zram_bytes=$((zram_size * 1024 * 1024)) || true
-    echo "$zram_bytes" > /sys/block/zram0/disksize 2>/dev/null || {
+    echo "$zram_bytes" > "/sys/block/$zram_device/disksize" 2>/dev/null || {
         log error "设置 ZRAM 大小失败"
+        log error "设备: /sys/block/$zram_device/disksize"
         return 1
     }
 
     # 物理内存熔断
-    if [[ -e /sys/block/zram0/mem_limit ]]; then
+    if [[ -e "/sys/block/$zram_device/mem_limit" ]]; then
         local phys_limit_bytes=$((phys_limit * 1024 * 1024)) || true
-        echo "$phys_limit_bytes" > /sys/block/zram0/mem_limit 2>/dev/null || true
+        echo "$phys_limit_bytes" > "/sys/block/$zram_device/mem_limit" 2>/dev/null || true
         log info "已启用物理内存熔断保护 (Limit: ${phys_limit}MB)"
     fi
 
-    mkswap /dev/zram0 > /dev/null 2>&1 || {
+    # 格式化 ZRAM 设备为 swap
+    mkswap "/dev/$zram_device" > /dev/null 2>&1 || {
         log error "格式化 ZRAM 失败"
+        log error "设备: /dev/$zram_device"
         return 1
     }
 
-    swapon -p 100 /dev/zram0 > /dev/null 2>&1 || {
+    # 启用 ZRAM swap
+    swapon -p 100 "/dev/$zram_device" > /dev/null 2>&1 || {
         log error "启用 ZRAM 失败"
+        log error "设备: /dev/$zram_device"
         return 1
     }
 
