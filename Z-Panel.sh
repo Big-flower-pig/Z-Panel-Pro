@@ -1643,9 +1643,20 @@ configure_zram_compression() {
             }
             log info "设置压缩算法: $algorithm"
         else
-            # 使用 sed 替代 grep -oE 以提高兼容性
-            local fallback=$(echo "$supported" | sed -n 's/.*\[\([^]]*\)\].*/\1/p' | head -1)
+            # 使用更兼容的方法提取默认算法（方括号内的算法）
+            # 格式通常是: lzo lz4 zstd [lz4] 或类似格式
+            local fallback=""
+            # 先尝试用 awk 提取方括号内的内容
+            fallback=$(echo "$supported" | awk -F'[][]' '{print $2}' | head -1)
+
+            # 如果 awk 方法失败，尝试用 sed 提取第一个算法
+            if [[ -z "$fallback" ]]; then
+                fallback=$(echo "$supported" | sed 's/^\s*//' | head -1 | awk '{print $1}')
+            fi
+
+            # 如果仍然为空，使用默认值
             [[ -z "$fallback" ]] && fallback="lzo"
+
             echo "$fallback" > "/sys/block/$zram_device/comp_algorithm" 2>/dev/null || true
             algorithm="$fallback"
             log info "使用回退算法: $algorithm"
@@ -3182,16 +3193,10 @@ install_global_shortcut() {
             return 0
         fi
 
-        # 快捷键已存在但指向不同位置，询问是否覆盖
+        # 快捷键已存在但指向不同位置，自动备份并覆盖
         log warn "全局快捷键 'z' 已存在: $shortcut_path"
         echo -e "${YELLOW}检测到现有快捷键指向:${NC} $existing_link"
         echo -e "${YELLOW}当前脚本路径:${NC} $script_path"
-        echo ""
-
-        if ! confirm "是否覆盖现有快捷键？"; then
-            log info "用户选择保留现有快捷键"
-            return 0
-        fi
 
         # 备份现有快捷键
         local backup_path="${shortcut_path}.bak.$(date +%Y%m%d_%H%M%S)"
