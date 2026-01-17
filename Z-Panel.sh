@@ -3,6 +3,7 @@
 # Make pipes fail on first failed command, keep predictable locale and
 # enable nullglob to avoid literal globs when none match.
 set -o pipefail
+set -euo pipefail
 export LC_ALL=C
 shopt -s nullglob
 
@@ -80,6 +81,16 @@ declare -g ZRAM_ENABLED=false
 declare -g DYNAMIC_MODE=false
 declare -g STRATEGY_MODE="balance"  # conservative, balance, aggressive
 
+# 缓存变量（用于监控面板）
+declare -g CACHE_MEM_TOTAL=0
+declare -g CACHE_MEM_USED=0
+declare -g CACHE_MEM_AVAIL=0
+declare -g CACHE_BUFF_CACHE=0
+declare -g CACHE_SWAP_TOTAL=0
+declare -g CACHE_SWAP_USED=0
+declare -g CACHE_LAST_UPDATE=0
+declare -g CACHE_TTL=3  # 缓存有效期（秒）
+
 # ============================================================================
 # 工具函数
 # ============================================================================
@@ -129,9 +140,149 @@ pause() {
 
 confirm() {
     local message="$1"
-    echo -ne "${YELLOW}${message} (y/N): ${NC}"
+    local default="${2:-N}"
+    local prompt
+
+    if [[ "$default" == "Y" ]]; then
+        prompt="${YELLOW}${message} (Y/n): ${NC}"
+    else
+        prompt="${YELLOW}${message} (y/N): ${NC}"
+    fi
+
+    echo -ne "$prompt"
     read -r response
-    [[ "$response" =~ ^[Yy]$ ]]
+
+    if [[ -z "$response" ]]; then
+        [[ "$default" == "Y" ]]
+    else
+        [[ "$response" =~ ^[Yy]$ ]]
+    fi
+}
+
+# ============================================================================
+# 工具检查函数
+# ============================================================================
+
+check_command() {
+    local cmd=$1
+    if ! command -v "$cmd" &> /dev/null; then
+        log error "缺少必需命令: $cmd"
+        return 1
+    fi
+    return 0
+}
+
+check_dependencies() {
+    local missing=()
+
+    for cmd in awk sed grep; do
+        if ! command -v "$cmd" &> /dev/null; then
+            missing+=("$cmd")
+        fi
+    done
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        log error "缺少必需命令: ${missing[*]}"
+        return 1
+    fi
+
+    return 0
+}
+
+# ============================================================================
+# 缓存管理
+# ============================================================================
+
+update_cache() {
+    local current_time=$(date +%s)
+    local cache_age=$((current_time - CACHE_LAST_UPDATE))
+
+    # 如果缓存未过期，直接返回
+    if [[ $cache_age -lt $CACHE_TTL ]]; then
+        return 0
+    fi
+
+    # 更新缓存
+    CACHE_MEM_TOTAL=$(free -m | awk '/^Mem:/ {print $2}')
+    CACHE_MEM_USED=$(free -m | awk '/^Mem:/ {print $3}')
+    CACHE_MEM_AVAIL=$(free -m | awk '/^Mem:/ {print $7}')
+    CACHE_BUFF_CACHE=$(free -m | awk '/^Mem:/ {print $6}')
+    CACHE_SWAP_TOTAL=$(free -m | awk '/Swap:/ {print $2}')
+    CACHE_SWAP_USED=$(free -m | awk '/Swap:/ {print $3}')
+    CACHE_LAST_UPDATE=$current_time
+}
+
+clear_cache() {
+    CACHE_MEM_TOTAL=0
+    CACHE_MEM_USED=0
+    CACHE_MEM_AVAIL=0
+    CACHE_BUFF_CACHE=0
+    CACHE_SWAP_TOTAL=0
+    CACHE_SWAP_USED=0
+    CACHE_LAST_UPDATE=0
+}
+
+# ============================================================================
+# 内存信息获取（统一接口）
+# ============================================================================
+
+get_memory_info() {
+    local use_cache=${1:-true}
+
+    if [[ "$use_cache" == "true" ]]; then
+        update_cache
+        echo "$CACHE_MEM_TOTAL $CACHE_MEM_USED $CACHE_MEM_AVAIL $CACHE_BUFF_CACHE"
+    else
+        free -m | awk '/^Mem:/ {print $2, $3, $7, $6}'
+    fi
+}
+
+get_swap_info() {
+    local use_cache=${1:-true}
+
+    if [[ "$use_cache" == "true" ]]; then
+        update_cache
+        echo "$CACHE_SWAP_TOTAL $CACHE_SWAP_USED"
+    else
+        free -m | awk '/Swap:/ {print $2, $3}'
+    fi
+}
+
+get_zram_usage() {
+    if ! swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
+        echo "0 0"
+        return
+    fi
+
+    local zram_total=$(swapon --show=SIZE --noheadings 2>/dev/null | grep zram | awk '{print $1}')
+    local zram_used=$(swapon --show=USED --noheadings 2>/dev/null | grep zram | awk '{print $1}')
+
+    [[ -z "$zram_total" || "$zram_total" == "0" ]] && zram_total=1
+    [[ -z "$zram_used" ]] && zram_used=0
+
+    echo "$zram_total $zram_used"
+}
+
+# ============================================================================
+# 安全的配置加载
+# ============================================================================
+
+safe_source() {
+    local file=$1
+    local pattern='^[A-Z_][A-Z0-9_]*='
+
+    if [[ ! -f "$file" ]]; then
+        return 1
+    fi
+
+    # 验证文件内容只包含安全的赋值语句
+    if grep -vE "^(#|$pattern)" "$file" | grep -q '[^[:space:]]'; then
+        log error "配置文件包含不安全内容: $file"
+        return 1
+    fi
+
+    source "$file"
+    return 0
 }
 
 # ============================================================================
@@ -145,6 +296,10 @@ show_progress_bar() {
     local label=${4:-""}
 
     [[ -z "$label" ]] || echo -ne "${WHITE}$label${NC} "
+
+    # 防止除零错误
+    [[ "$total" -eq 0 ]] && total=1
+    [[ "$current" -gt "$total" ]] && current=$total
 
     local filled=$((current * width / total))
     local empty=$((width - filled))
@@ -169,11 +324,12 @@ show_compression_chart() {
     local filled=0
     local color="$GREEN"
 
-    if (( $(echo "$ratio >= 3.0" | bc -l 2>/dev/null || echo 0) )); then
+    # 使用 awk 进行浮点数比较，避免依赖 bc
+    if (( $(awk "BEGIN {print ($ratio >= 3.0)}") )); then
         filled=$((width * 100 / 100))
-    elif (( $(echo "$ratio >= 2.0" | bc -l 2>/dev/null || echo 0) )); then
+    elif (( $(awk "BEGIN {print ($ratio >= 2.0)}") )); then
         filled=$((width * 75 / 100))
-    elif (( $(echo "$ratio >= 1.5" | bc -l 2>/dev/null || echo 0) )); then
+    elif (( $(awk "BEGIN {print ($ratio >= 1.5)}") )); then
         filled=$((width * 50 / 100))
         color="$YELLOW"
     else
@@ -205,14 +361,24 @@ show_memory_pie() {
 
 load_log_config() {
     if [[ -f "$LOG_CONFIG_FILE" ]]; then
-        source "$LOG_CONFIG_FILE"
+        safe_source "$LOG_CONFIG_FILE" || true
     fi
 }
 
 save_log_config() {
+    # 验证参数
+    [[ ! "$LOG_MAX_SIZE_MB" =~ ^[0-9]+$ ]] && LOG_MAX_SIZE_MB=50
+    [[ ! "$LOG_RETENTION_DAYS" =~ ^[0-9]+$ ]] && LOG_RETENTION_DAYS=30
+
     cat > "$LOG_CONFIG_FILE" <<EOF
+# ============================================================================
 # Z-Panel Pro 日志配置
+# ============================================================================
 # 自动生成，请勿手动修改
+#
+# LOG_MAX_SIZE_MB: 单个日志文件最大大小（MB）
+# LOG_RETENTION_DAYS: 日志文件保留天数
+# ============================================================================
 
 LOG_MAX_SIZE_MB=$LOG_MAX_SIZE_MB
 LOG_RETENTION_DAYS=$LOG_RETENTION_DAYS
@@ -248,27 +414,35 @@ log_config_menu() {
 
         case $choice in
             1)
-                echo -ne "\n设置最大日志大小 (MB): "
-                read -r size
-                if [[ "$size" =~ ^[0-9]+$ ]] && [[ $size -ge 10 ]] && [[ $size -le 500 ]]; then
-                    LOG_MAX_SIZE_MB=$size
-                    save_log_config
-                    echo -e "${GREEN}设置成功${NC}"
-                else
-                    echo -e "${RED}无效输入，请输入 10-500 之间的数字${NC}"
-                fi
+                local valid=false
+                while [[ "$valid" == "false" ]]; do
+                    echo -ne "\n设置最大日志大小 (MB, 10-500): "
+                    read -r size
+                    if [[ "$size" =~ ^[0-9]+$ ]] && [[ $size -ge 10 ]] && [[ $size -le 500 ]]; then
+                        LOG_MAX_SIZE_MB=$size
+                        save_log_config
+                        echo -e "${GREEN}设置成功${NC}"
+                        valid=true
+                    else
+                        echo -e "${RED}无效输入，请输入 10-500 之间的数字${NC}"
+                    fi
+                done
                 pause
                 ;;
             2)
-                echo -ne "\n设置日志保留天数: "
-                read -r days
-                if [[ "$days" =~ ^[0-9]+$ ]] && [[ $days -ge 1 ]] && [[ $days -le 365 ]]; then
-                    LOG_RETENTION_DAYS=$days
-                    save_log_config
-                    echo -e "${GREEN}设置成功${NC}"
-                else
-                    echo -e "${RED}无效输入，请输入 1-365 之间的数字${NC}"
-                fi
+                local valid=false
+                while [[ "$valid" == "false" ]]; do
+                    echo -ne "\n设置日志保留天数 (1-365): "
+                    read -r days
+                    if [[ "$days" =~ ^[0-9]+$ ]] && [[ $days -ge 1 ]] && [[ $days -le 365 ]]; then
+                        LOG_RETENTION_DAYS=$days
+                        save_log_config
+                        echo -e "${GREEN}设置成功${NC}"
+                        valid=true
+                    else
+                        echo -e "${RED}无效输入，请输入 1-365 之间的数字${NC}"
+                    fi
+                done
                 pause
                 ;;
             3)
@@ -401,9 +575,10 @@ clean_old_logs() {
             local log_age=$(( ( $(date +%s) - $(date -d "$log_date" +%s 2>/dev/null || echo 0) ) / 86400 ))
 
             if [[ $log_age -gt $LOG_RETENTION_DAYS ]]; then
-                rm -f "$log"
-                ((cleaned++))
-                log info "删除过期日志: $(basename "$log")"
+                rm -f "$log" && {
+                    ((cleaned++))
+                    log info "删除过期日志: $(basename "$log")"
+                } || log warn "删除失败: $(basename "$log")"
             fi
         fi
     done
@@ -412,9 +587,14 @@ clean_old_logs() {
         if [[ -f "$log" ]]; then
             local size_mb=$(du -m "$log" | cut -f1)
             if [[ $size_mb -gt $LOG_MAX_SIZE_MB ]]; then
-                tail -1000 "$log" > "${log}.tmp" && mv "${log}.tmp" "$log"
-                ((cleaned++))
-                log info "截断过大日志: $(basename "$log")"
+                local temp_file="${log}.tmp.$$"
+                if tail -1000 "$log" > "$temp_file" && mv "$temp_file" "$log"; then
+                    ((cleaned++))
+                    log info "截断过大日志: $(basename "$log")"
+                else
+                    rm -f "$temp_file"
+                    log warn "截断失败: $(basename "$log")"
+                fi
             fi
         fi
     done
@@ -449,8 +629,16 @@ detect_system() {
         PACKAGE_MANAGER="apk"
     fi
 
+    # 验证内存信息
     TOTAL_MEMORY_MB=$(free -m | awk '/^Mem:/ {print $2}')
+    if [[ -z "$TOTAL_MEMORY_MB" || "$TOTAL_MEMORY_MB" -lt 1 ]]; then
+        log error "无法获取内存信息"
+        exit 1
+    fi
+
+    # 验证 CPU 核心数
     CPU_CORES=$(nproc 2>/dev/null || echo 1)
+    [[ $CPU_CORES -lt 1 ]] && CPU_CORES=1
 
     log info "系统: $CURRENT_DISTRO $CURRENT_VERSION"
     log info "内存: ${TOTAL_MEMORY_MB}MB"
@@ -458,6 +646,11 @@ detect_system() {
 }
 
 install_packages() {
+    if [[ -z "$PACKAGE_MANAGER" ]]; then
+        log error "未知的包管理器"
+        return 1
+    fi
+
     case $PACKAGE_MANAGER in
         apt)
             apt-get update -qq > /dev/null 2>&1
@@ -468,6 +661,10 @@ install_packages() {
             ;;
         apk)
             apk add --no-cache "$@" > /dev/null 2>&1
+            ;;
+        *)
+            log error "不支持的包管理器: $PACKAGE_MANAGER"
+            return 1
             ;;
     esac
 }
@@ -482,16 +679,25 @@ create_backup() {
     local timestamp=$(date +%Y%m%d_%H%M%S)
     local backup_path="$BACKUP_DIR/backup_$timestamp"
 
-    mkdir -p "$backup_path"
+    if ! mkdir -p "$backup_path"; then
+        log error "无法创建备份目录: $backup_path"
+        return 1
+    fi
 
     local files=(
         "/etc/sysctl.conf"
         "/etc/fstab"
     )
 
+    local backed_up=0
     for file in "${files[@]}"; do
         if [[ -f "$file" ]]; then
-            cp "$file" "$backup_path/" 2>/dev/null || true
+            if cp "$file" "$backup_path/" 2>/dev/null; then
+                ((backed_up++))
+                log info "已备份: $file"
+            else
+                log warn "备份失败: $file"
+            fi
         fi
     done
 
@@ -503,7 +709,8 @@ distro_version=$CURRENT_VERSION
 strategy=$STRATEGY_MODE
 EOF
 
-    log info "备份完成: $backup_path"
+    log info "备份完成: $backup_path (共 $backed_up 个文件)"
+    return 0
 }
 
 restore_backup() {
@@ -514,18 +721,41 @@ restore_backup() {
         return 1
     fi
 
+    if [[ ! -f "$backup_path/info.txt" ]]; then
+        log error "备份信息文件缺失: $backup_path/info.txt"
+        return 1
+    fi
+
     log info "还原系统备份: $backup_path"
+
+    local restored=0
+    local failed=0
 
     for file in "$backup_path"/*; do
         if [[ -f "$file" ]]; then
             local filename=$(basename "$file")
             if [[ "$filename" != "info.txt" ]]; then
-                cp "$file" "/etc/$filename" 2>/dev/null || true
+                local target="/etc/$filename"
+                if [[ -f "$target" ]]; then
+                    # 创建原文件的备份
+                    local backup_target="${target}.bak.$(date +%Y%m%d_%H%M%S)"
+                    if ! cp "$target" "$backup_target" 2>/dev/null; then
+                        log warn "无法备份原文件: $target"
+                    fi
+                fi
+
+                if cp "$file" "$target" 2>/dev/null; then
+                    ((restored++))
+                    log info "已还原: $filename"
+                else
+                    ((failed++))
+                    log error "还原失败: $filename"
+                fi
             fi
         fi
     done
 
-    log info "还原完成"
+    log info "还原完成: 成功 $restored 个文件，失败 $failed 个文件"
     return 0
 }
 
@@ -584,7 +814,7 @@ detect_best_algorithm() {
 
 load_strategy_config() {
     if [[ -f "$STRATEGY_CONFIG_FILE" ]]; then
-        source "$STRATEGY_CONFIG_FILE"
+        safe_source "$STRATEGY_CONFIG_FILE" || STRATEGY_MODE="balance"
     else
         STRATEGY_MODE="balance"
     fi
@@ -592,8 +822,16 @@ load_strategy_config() {
 
 save_strategy_config() {
     cat > "$STRATEGY_CONFIG_FILE" <<EOF
+# ============================================================================
 # Z-Panel Pro 策略配置
+# ============================================================================
 # 自动生成，请勿手动修改
+#
+# STRATEGY_MODE: 优化策略模式
+#   - conservative: 保守模式，优先稳定性
+#   - balance: 平衡模式，性能与稳定兼顾（推荐）
+#   - aggressive: 激进模式，最大化利用内存
+# ============================================================================
 
 STRATEGY_MODE=$STRATEGY_MODE
 EOF
@@ -668,8 +906,8 @@ get_zram_status() {
     if [[ -n "$data_size" ]] && [[ -n "$comp_size" ]] && [[ "$comp_size" != "0" ]]; then
         local data_num=$(echo "$data_size" | sed 's/[KMGT]//g' | awk '{print $1*1}')
         local comp_num=$(echo "$comp_size" | sed 's/[KMGT]//g' | awk '{print $1*1}')
-        if [[ "$comp_num" -gt 0 ]] && [[ "$data_num" -gt 0 ]]; then
-            compression_ratio=$(echo "scale=2; $data_num / $comp_num" | bc 2>/dev/null || echo "1.00")
+        if (( $(awk "BEGIN {print ($comp_num > 0)}") )) && (( $(awk "BEGIN {print ($data_num > 0)}") )); then
+            compression_ratio=$(awk "BEGIN {printf \"%.2f\", $data_num / $comp_num}")
         fi
     fi
 
@@ -692,6 +930,12 @@ configure_zram() {
 
     log info "开始配置 ZRAM (策略: $mode)..."
 
+    # 验证模式
+    if [[ "$mode" != "conservative" ]] && [[ "$mode" != "balance" ]] && [[ "$mode" != "aggressive" ]]; then
+        log error "无效的策略模式: $mode"
+        return 1
+    fi
+
     if [[ "$algorithm" == "auto" ]]; then
         algorithm=$(detect_best_algorithm)
     fi
@@ -703,7 +947,10 @@ configure_zram() {
 
     if ! command -v zramctl &> /dev/null; then
         log info "安装 zram-tools..."
-        install_packages zram-tools zram-config zstd lz4 lzop bc
+        install_packages zram-tools zram-config zstd lz4 lzop || {
+            log error "安装 zram-tools 失败"
+            return 1
+        }
     fi
 
     if ! lsmod | grep -q zram; then
@@ -727,12 +974,14 @@ configure_zram() {
     if [[ -e /sys/block/zram0/comp_algorithm ]]; then
         local supported=$(cat /sys/block/zram0/comp_algorithm 2>/dev/null)
         if echo "$supported" | grep -q "$algorithm"; then
-            echo "$algorithm" > /sys/block/zram0/comp_algorithm 2>/dev/null
+            echo "$algorithm" > /sys/block/zram0/comp_algorithm 2>/dev/null || {
+                log warn "设置压缩算法失败，使用默认算法"
+            }
             log info "设置压缩算法: $algorithm"
         else
             local fallback=$(echo "$supported" | grep -oE '\[([^\]]+)\]' | head -1 | sed 's/[\[\]]//g')
             [[ -z "$fallback" ]] && fallback="lzo"
-            echo "$fallback" > /sys/block/zram0/comp_algorithm 2>/dev/null
+            echo "$fallback" > /sys/block/zram0/comp_algorithm 2>/dev/null || true
             algorithm="$fallback"
             log info "使用回退算法: $algorithm"
         fi
@@ -766,10 +1015,24 @@ configure_zram() {
         return 1
     }
 
-    mkdir -p "$CONF_DIR"
+    if ! mkdir -p "$CONF_DIR"; then
+        log error "无法创建配置目录: $CONF_DIR"
+        return 1
+    fi
+
     cat > "$ZRAM_CONFIG_FILE" <<EOF
+# ============================================================================
 # Z-Panel Pro ZRAM 配置
+# ============================================================================
 # 自动生成，请勿手动修改
+#
+# ALGORITHM: ZRAM 压缩算法 (auto/zstd/lz4/lzo)
+# STRATEGY: 使用的策略模式
+# PERCENT: ZRAM 大小占物理内存的百分比
+# PRIORITY: Swap 优先级
+# SIZE: ZRAM 设备大小（MB）
+# PHYS_LIMIT: 物理内存使用限制（MB）
+# ============================================================================
 
 ALGORITHM=$algorithm
 STRATEGY=$mode
@@ -779,7 +1042,9 @@ SIZE=$zram_size
 PHYS_LIMIT=$phys_limit
 EOF
 
-    create_zram_service
+    create_zram_service || {
+        log warn "创建 ZRAM 服务失败"
+    }
 
     ZRAM_ENABLED=true
     log info "ZRAM 配置成功: $algorithm, ${zram_size}MB, 优先级 100"
@@ -792,32 +1057,93 @@ create_zram_service() {
 
     cat > "$INSTALL_DIR/zram-start.sh" <<'EOF'
 #!/bin/bash
+set -e
 CONF_DIR="/opt/z-panel/conf"
+LOG_DIR="/opt/z-panel/logs"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_DIR/zram-service.log" 2>/dev/null || true
+}
+
+# 安全的配置加载函数
+safe_source() {
+    local file=$1
+    local pattern='^[A-Z_][A-Z0-9_]*='
+
+    if [[ ! -f "$file" ]]; then
+        return 1
+    fi
+
+    # 验证文件内容只包含安全的赋值语句
+    if grep -vE "^(#|$pattern)" "$file" | grep -q '[^[:space:]]'; then
+        log "配置文件包含不安全内容: $file"
+        return 1
+    fi
+
+    source "$file"
+    return 0
+}
 
 if [[ -f "$CONF_DIR/zram.conf" ]]; then
-    source "$CONF_DIR/zram.conf"
+    if ! safe_source "$CONF_DIR/zram.conf"; then
+        log "配置文件加载失败"
+        exit 1
+    fi
 
-    modprobe zram 2>/dev/null || true
+    log "开始启动 ZRAM 服务..."
+
+    modprobe zram 2>/dev/null || {
+        log "无法加载 zram 模块"
+        exit 1
+    }
 
     if [[ -e /sys/block/zram0/reset ]]; then
         echo 1 > /sys/block/zram0/reset 2>/dev/null || true
+        log "已重置 ZRAM 设备"
     fi
 
     if [[ -e /sys/block/zram0/comp_algorithm ]]; then
         echo "$ALGORITHM" > /sys/block/zram0/comp_algorithm 2>/dev/null || true
+        log "设置压缩算法: $ALGORITHM"
     fi
 
     local zram_bytes=$((SIZE * 1024 * 1024))
-    echo "$zram_bytes" > /sys/block/zram0/disksize 2>/dev/null || true
+    echo "$zram_bytes" > /sys/block/zram0/disksize 2>/dev/null || {
+        log "设置 ZRAM 大小失败"
+        exit 1
+    }
+    log "设置 ZRAM 大小: ${SIZE}MB"
 
     # 物理内存熔断
     if [[ -e /sys/block/zram0/mem_limit ]]; then
         local phys_limit_bytes=$((PHYS_LIMIT * 1024 * 1024))
         echo "$phys_limit_bytes" > /sys/block/zram0/mem_limit 2>/dev/null || true
+        log "设置物理内存限制: ${PHYS_LIMIT}MB"
     fi
 
-    mkswap /dev/zram0 > /dev/null 2>&1 || true
-    swapon -p 100 /dev/zram0 > /dev/null 2>&1 || true
+    mkswap /dev/zram0 > /dev/null 2>&1 || {
+        log "格式化 ZRAM 失败"
+        exit 1
+    }
+
+    swapon -p 100 /dev/zram0 > /dev/null 2>&1 || {
+        log "启用 ZRAM 失败"
+        exit 1
+    }
+
+    log "ZRAM 服务启动成功"
+else
+    log "配置文件不存在: $CONF_DIR/zram.conf"
+    exit 1
+fi
+
+# 应用内核参数
+if [[ -f "$CONF_DIR/kernel.conf" ]]; then
+    while IFS='=' read -r key value; do
+        [[ "$key" =~ ^# ]] && continue
+        [[ -z "$key" ]] && continue
+        sysctl -w "$key=$value" > /dev/null 2>&1 || log "设置 $key 失败"
+    done < "$CONF_DIR/kernel.conf"
 fi
 EOF
     chmod +x "$INSTALL_DIR/zram-start.sh"
@@ -833,6 +1159,8 @@ Wants=multi-user.target
 Type=oneshot
 ExecStart=$INSTALL_DIR/zram-start.sh
 RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -903,19 +1231,18 @@ configure_virtual_memory() {
 
     read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< $(calculate_strategy "$mode")
 
-    local mem_total=$(free -m | awk '/^Mem:/ {print $2}')
-    local swap_total=$(free -m | awk '/Swap:/ {print $2}')
-    local swap_used=$(free -m | awk '/Swap:/ {print $3}')
+    # 使用缓存获取内存信息
+    read -r mem_total _ _ _ <<< $(get_memory_info false)
+    read -r swap_total swap_used <<< $(get_swap_info false)
+
     local swap_usage=0
     [[ $swap_total -gt 0 ]] && swap_usage=$((swap_used * 100 / swap_total))
 
+    # 使用缓存获取 ZRAM 信息
+    read -r zram_total zram_used <<< $(get_zram_usage)
     local zram_usage=0
-    if swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
-        local zram_total=$(swapon --show=SIZE --noheadings 2>/dev/null | grep zram | awk '{print $1}')
-        local zram_used=$(swapon --show=USED --noheadings 2>/dev/null | grep zram | awk '{print $1}')
-        if [[ -n "$zram_total" ]] && [[ -n "$zram_used" ]] && [[ "$zram_total" -gt 0 ]]; then
-            zram_usage=$((zram_used * 100 / zram_total))
-        fi
+    if [[ $zram_total -gt 0 ]]; then
+        zram_usage=$((zram_used * 100 / zram_total))
     fi
 
     # 动态调整 swappiness
@@ -943,8 +1270,29 @@ configure_virtual_memory() {
 
     mkdir -p "$CONF_DIR"
     cat > "$KERNEL_CONFIG_FILE" <<EOF
+# ============================================================================
 # Z-Panel Pro 内核参数配置
+# ============================================================================
 # 自动生成，请勿手动修改
+#
+# 内存管理参数:
+#   vm.swappiness: 系统使用 swap 的倾向性 (0-100)
+#   vm.vfs_cache_pressure: 缓存 inode/dentry 的倾向性
+#   vm.min_free_kbytes: 系统保留的最小空闲内存
+#
+# 脏数据策略 (I/O 熔断保护):
+#   vm.dirty_ratio: 脏数据占系统内存的最大百分比
+#   vm.dirty_background_ratio: 后台写入开始时的脏数据百分比
+#   vm.dirty_expire_centisecs: 脏数据过期时间（厘秒）
+#   vm.dirty_writeback_centisecs: 后台写入间隔（厘秒）
+#
+# 页面聚合:
+#   vm.page-cluster: 一次读取的页面数 (0=禁用)
+#
+# 文件系统:
+#   fs.file-max: 系统最大打开文件数
+#   fs.inotify.max_user_watches: inotify 监视数量限制
+# ============================================================================
 
 # 内存管理
 vm.swappiness=$swappiness
@@ -998,8 +1346,37 @@ enable_dynamic_mode() {
 
     cat > "$INSTALL_DIR/dynamic-adjust.sh" <<'EOF'
 #!/bin/bash
+set -e
 CONF_DIR="/opt/z-panel/conf"
 LOG_DIR="/opt/z-panel/logs"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_DIR/dynamic-adjust.log" 2>/dev/null || true
+}
+
+# 统一的内存信息获取函数
+get_memory_info() {
+    free -m | awk '/^Mem:/ {print $2, $3, $7, $6}'
+}
+
+get_swap_info() {
+    free -m | awk '/Swap:/ {print $2, $3}'
+}
+
+get_zram_usage() {
+    if ! swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
+        echo "0 0"
+        return
+    fi
+
+    local zram_total=$(swapon --show=SIZE --noheadings 2>/dev/null | grep zram | awk '{print $1}')
+    local zram_used=$(swapon --show=USED --noheadings 2>/dev/null | grep zram | awk '{print $1}')
+
+    [[ -z "$zram_total" || "$zram_total" == "0" ]] && zram_total=1
+    [[ -z "$zram_used" ]] && zram_used=0
+
+    echo "$zram_total $zram_used"
+}
 
 if [[ -f "$CONF_DIR/strategy.conf" ]]; then
     source "$CONF_DIR/strategy.conf"
@@ -1007,28 +1384,17 @@ else
     STRATEGY_MODE="balance"
 fi
 
-mem_total=$(free -m | awk '/^Mem:/ {print $2}')
-mem_avail=$(free -m | awk '/^Mem:/ {print $7}')
-mem_used=$((mem_total - mem_avail))
+# 使用统一的函数获取内存信息
+read -r mem_total mem_used mem_avail buff_cache <<< $(get_memory_info)
 mem_percent=$((mem_used * 100 / mem_total))
 
-swap_total=$(free -m | awk '/Swap:/ {print $2}')
-swap_used=$(free -m | awk '/Swap:/ {print $3}')
+read -r swap_total swap_used <<< $(get_swap_info)
+swap_usage=0
+[[ $swap_total -gt 0 ]] && swap_usage=$((swap_used * 100 / swap_total))
 
-if [[ $swap_total -gt 0 ]]; then
-    swap_usage=$((swap_used * 100 / swap_total))
-else
-    swap_usage=0
-fi
-
+read -r zram_total zram_used <<< $(get_zram_usage)
 zram_usage=0
-if swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
-    zram_total=$(swapon --show=SIZE --noheadings 2>/dev/null | grep zram | awk '{print $1}')
-    zram_used=$(swapon --show=USED --noheadings 2>/dev/null | grep zram | awk '{print $1}')
-    if [[ -n "$zram_total" ]] && [[ -n "$zram_used" ]] && [[ "$zram_total" -gt 0 ]]; then
-        zram_usage=$((zram_used * 100 / zram_total))
-    fi
-fi
+[[ $zram_total -gt 0 ]] && zram_usage=$((zram_used * 100 / zram_total))
 
 # 计算最优 swappiness
 optimal_swappiness=60
@@ -1054,15 +1420,15 @@ fi
 current_swappiness=$(sysctl -n vm.swappiness 2>/dev/null || echo 60)
 if [[ $optimal_swappiness -ne $current_swappiness ]]; then
     sysctl -w vm.swappiness=$optimal_swappiness > /dev/null 2>&1
-    echo "[$(date)] 调整 swappiness: $current_swappiness -> $optimal_swappiness" >> "$LOG_DIR/dynamic.log"
+    log "调整 swappiness: $current_swappiness -> $optimal_swappiness"
 fi
 
-echo "[$(date)] 内存: ${mem_percent}%, Swap: ${swap_usage}%, ZRAM: ${zram_usage}%, swappiness: $optimal_swappiness" >> "$LOG_DIR/dynamic.log"
+log "内存: ${mem_percent}%, Swap: ${swap_usage}%, ZRAM: ${zram_usage}%, swappiness: $optimal_swappiness"
 EOF
 
     chmod +x "$INSTALL_DIR/dynamic-adjust.sh"
 
-    local cron_entry="*/5 * * * * $INSTALL_DIR/dynamic-adjust.sh >> /dev/null 2>&1"
+    local cron_entry="*/5 * * * * $INSTALL_DIR/dynamic-adjust.sh"
     if ! crontab -l 2>/dev/null | grep -q "dynamic-adjust.sh"; then
         (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
     fi
@@ -1087,6 +1453,9 @@ disable_dynamic_mode() {
 show_monitor() {
     clear
 
+    # 捕获 Ctrl+C 信号
+    trap 'return 0' INT
+
     while true; do
         clear
 
@@ -1096,10 +1465,8 @@ show_monitor() {
         printf "${CYAN}║${NC} 系统内存: ${WHITE}%4dMB${NC} | CPU: ${WHITE}%d核心${NC} | 模式: ${YELLOW}%s${NC} ${CYAN}║${NC}\n" "$TOTAL_MEMORY_MB" "$CPU_CORES" "$STRATEGY_MODE"
         echo -e "${CYAN}╠══════════════════════════════════════════════════════╣${NC}"
 
-        local mem_total=$(free -m | awk '/^Mem:/ {print $2}')
-        local mem_used=$(free -m | awk '/^Mem:/ {print $3}')
-        local mem_avail=$(free -m | awk '/^Mem:/ {print $7}')
-        local buff_cache=$(free -m | awk '/^Mem:/ {print $6}')
+        # 使用缓存获取内存信息
+        read -r mem_total mem_used mem_avail buff_cache <<< $(get_memory_info true)
 
         printf "${CYAN}║${NC} [RAM] 使用: ${WHITE}%dMB${NC} / 缓存: ${WHITE}%dMB${NC} / 空闲: ${GREEN}%dMB${NC} ${CYAN}║${NC}\n" "$mem_used" "$buff_cache" "$mem_avail"
         echo -e "${CYAN}║${NC}                                               ${CYAN}║${NC}"
@@ -1116,11 +1483,12 @@ show_monitor() {
             local zram_status=$(get_zram_status)
             local algo=$(echo "$zram_status" | grep -o '"algorithm":"[^"]*"' | cut -d'"' -f4)
             local ratio=$(echo "$zram_status" | grep -o '"compression_ratio":"[^"]*"' | cut -d'"' -f4)
+            [[ -z "$ratio" || "$ratio" == "0" ]] && ratio="1.00"
 
-            local zram_total_kb=$(swapon --show=SIZE --noheadings 2>/dev/null | grep zram | awk '{print $1}')
-            local zram_used_kb=$(swapon --show=USED --noheadings 2>/dev/null | grep zram | awk '{print $1}')
+            # 使用缓存获取 ZRAM 信息
+            read -r zram_total_kb zram_used_kb <<< $(get_zram_usage)
 
-            printf "${CYAN}║${NC} 算法: ${CYAN}%s${NC} | 压缩比: %s ${CYAN}║${NC}\n" "$algo" "${ratio}x"
+            printf "${CYAN}║${NC} 算法: ${CYAN}%s${NC} | 压缩比: ${CYAN}%s${NC}x ${CYAN}║${NC}\n" "$algo" "$ratio"
 
             echo -e "${CYAN}║${NC}                                               ${CYAN}║${NC}"
             printf "${CYAN}║${NC} ZRAM 压缩比: "
@@ -1136,8 +1504,8 @@ show_monitor() {
 
         echo -e "${CYAN}╠══════════════════════════════════════════════════════╣${NC}"
 
-        local swap_total=$(free -m | awk '/Swap:/ {print $2}')
-        local swap_used=$(free -m | awk '/Swap:/ {print $3}')
+        # 使用缓存获取 Swap 信息
+        read -r swap_total swap_used <<< $(get_swap_info true)
 
         if [[ $swap_total -gt 0 ]]; then
              printf "${CYAN}║${NC} Swap 负载: "
@@ -1162,6 +1530,9 @@ show_monitor() {
 
         sleep 3
     done
+
+    # 恢复信号处理
+    trap - INT
 }
 
 show_status() {
@@ -1198,8 +1569,8 @@ show_status() {
     fi
 
     echo -e "\n${BLUE}【Swap 状态】${NC}"
-    local swap_total=$(free -m | awk '/Swap:/ {print $2}')
-    local swap_used=$(free -m | awk '/Swap:/ {print $3}')
+    # 使用缓存获取 Swap 信息
+    read -r swap_total swap_used <<< $(get_swap_info false)
 
     if [[ $swap_total -eq 0 ]]; then
         echo -e "  ${YELLOW}未启用${NC}"
@@ -1242,7 +1613,7 @@ show_main_menu() {
 
     echo -e "${CYAN}║${NC}  ${GREEN}【主要功能】${NC}                                    ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${GREEN}1.${NC} 一键优化 (当前模式: ${YELLOW}$STRATEGY_MODE${NC})${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}  ${GREEN}2.${NC} 状态监控                                         ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}  ${GREEN}2.${NC} 状态监控 ${CYAN}[快捷键: z]${NC}                           ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}  ${GREEN}3.${NC} 日志管理                                         ${CYAN}║${NC}"
     echo -e "${CYAN}║${NC}                                                        ${CYAN}║${NC}"
 
@@ -1304,8 +1675,7 @@ strategy_menu() {
                 STRATEGY_MODE="conservative"
                 save_strategy_config
                 log info "策略已切换为: $STRATEGY_MODE"
-                read -p "是否立即应用新模式? [y/N]: " apply_now
-                if [[ "$apply_now" =~ ^[Yy]$ ]]; then
+                if confirm "是否立即应用新模式？"; then
                     quick_optimize
                 fi
                 return
@@ -1314,8 +1684,7 @@ strategy_menu() {
                 STRATEGY_MODE="balance"
                 save_strategy_config
                 log info "策略已切换为: $STRATEGY_MODE"
-                read -p "是否立即应用新模式? [y/N]: " apply_now
-                if [[ "$apply_now" =~ ^[Yy]$ ]]; then
+                if confirm "是否立即应用新模式？"; then
                     quick_optimize
                 fi
                 return
@@ -1324,8 +1693,7 @@ strategy_menu() {
                 STRATEGY_MODE="aggressive"
                 save_strategy_config
                 log info "策略已切换为: $STRATEGY_MODE"
-                read -p "是否立即应用新模式? [y/N]: " apply_now
-                if [[ "$apply_now" =~ ^[Yy]$ ]]; then
+                if confirm "是否立即应用新模式？"; then
                     quick_optimize
                 fi
                 return
@@ -1365,13 +1733,31 @@ zram_menu() {
                 pause
                 ;;
             2)
-                echo -ne "压缩算法 [auto/zstd/lz4/lzo]: "
-                read -r algo
-                configure_zram "$algo" "$STRATEGY_MODE"
+                local valid=false
+                while [[ "$valid" == "false" ]]; do
+                    echo -ne "压缩算法 [auto/zstd/lz4/lzo]: "
+                    read -r algo
+                    case "$algo" in
+                        auto|zstd|lz4|lzo)
+                            valid=true
+                            configure_zram "$algo" "$STRATEGY_MODE"
+                            ;;
+                        *)
+                            echo -e "${RED}无效算法，请重新输入${NC}"
+                            ;;
+                    esac
+                done
                 pause
                 ;;
             3)
-                get_zram_status | python3 -m json.tool 2>/dev/null || get_zram_status
+                # 使用 jq 或 python3 格式化 JSON，如果没有则直接显示
+                if command -v jq &> /dev/null; then
+                    get_zram_status | jq .
+                elif command -v python3 &> /dev/null; then
+                    get_zram_status | python3 -m json.tool 2>/dev/null || get_zram_status
+                else
+                    get_zram_status
+                fi
                 pause
                 ;;
             0)
@@ -1458,14 +1844,40 @@ quick_optimize() {
         return
     fi
 
-    create_backup
-    configure_zram "auto" "$STRATEGY_MODE"
-    configure_virtual_memory "$STRATEGY_MODE"
-    enable_dynamic_mode
+    local errors=0
 
-    echo -e "\n${GREEN}优化完成！${NC}"
-    echo -e "${GREEN}ZRAM 已配置为开机自动启动${NC}"
-    echo -e "${GREEN}策略模式: $STRATEGY_MODE${NC}"
+    # 1. 创建备份
+    if ! create_backup; then
+        log warn "备份创建失败，继续执行优化"
+        ((errors++))
+    fi
+
+    # 2. 配置 ZRAM
+    if ! configure_zram "auto" "$STRATEGY_MODE"; then
+        log error "ZRAM 配置失败"
+        ((errors++))
+    fi
+
+    # 3. 配置虚拟内存
+    if ! configure_virtual_memory "$STRATEGY_MODE"; then
+        log error "虚拟内存配置失败"
+        ((errors++))
+    fi
+
+    # 4. 启用动态调整
+    if ! enable_dynamic_mode; then
+        log warn "动态调整模式启用失败"
+        ((errors++))
+    fi
+
+    if [[ $errors -gt 0 ]]; then
+        echo -e "\n${YELLOW}注意: 优化过程中遇到 $errors 个错误，请检查日志${NC}"
+        echo -e "${CYAN}日志目录: $LOG_DIR${NC}"
+    else
+        echo -e "\n${GREEN}优化完成！${NC}"
+        echo -e "${GREEN}ZRAM 已配置为开机自动启动${NC}"
+        echo -e "${GREEN}策略模式: $STRATEGY_MODE${NC}"
+    fi
     pause
 }
 
@@ -1479,6 +1891,9 @@ main() {
         echo "请使用: sudo bash $0"
         exit 1
     fi
+
+    # 检查依赖
+    check_dependencies || exit 1
 
     detect_system
     mkdir -p "$INSTALL_DIR"/{conf,logs,backup}
@@ -1501,7 +1916,7 @@ main() {
             1)
                 quick_optimize
                 ;;
-            2)
+            2|z|Z)
                 show_monitor
                 ;;
             3)
