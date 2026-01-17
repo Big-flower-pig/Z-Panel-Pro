@@ -11,6 +11,26 @@ Z-Panel Pro 是一个以单文件 Bash 脚本为核心的内存与虚拟内存�
 
 快速开始（在 Linux 主机上，以 root 运行）
 
+## 下载脚本
+
+```bash
+curl -O https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/main/Z-Panel.sh
+```
+
+或使用 wget：
+
+```bash
+wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/main/Z-Panel.sh
+```
+
+赋予执行权限：
+
+```bash
+chmod +x Z-Panel.sh
+```
+
+## 运行脚本
+
 1. 语法检查（本地）
 
 ```bash

@@ -610,9 +610,10 @@ detect_system() {
     log info "检测系统信息..."
 
     if [[ -f /etc/os-release ]]; then
-        source /etc/os-release
-        CURRENT_DISTRO="${ID,,}"
-        CURRENT_VERSION="${VERSION_ID}"
+        # 使用 grep 提取信息，避免 source 导致的变量冲突
+        CURRENT_DISTRO=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+        CURRENT_VERSION=$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+        CURRENT_DISTRO="${CURRENT_DISTRO,,}"
     elif [[ -f /etc/redhat-release ]]; then
         CURRENT_DISTRO="centos"
         CURRENT_VERSION=$(cat /etc/redhat-release | grep -oE '[0-9]+\.[0-9]+' | head -1)
