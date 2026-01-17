@@ -56,12 +56,42 @@ Z-Panel Pro 是一款功能强大的企业级 Linux 内存优化工具，通过�
 
 ## 🔧 安装
 
+### 🚀 一键安装（推荐）
+
+最简单的安装方式，自动处理所有问题并注册全局命令：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/install.sh | bash
+```
+
+**安装完成后，使用全局命令 `z`：**
+
+```bash
+z                    # 启动面板
+z -h                 # 查看帮助
+z -m                 # 实时监控
+z -s                 # 查看状态
+z -c                 # 配置向导
+```
+
+**一键安装脚本功能：**
+
+- ✅ 自动下载到 `/opt/Z-Panel-Pro`
+- ✅ 自动转换文件格式（Windows → Unix）
+- ✅ 自动设置执行权限
+- ✅ 自动注册全局 `z` 命令
+- ✅ 解决所有换行符和权限问题
+
+---
+
+### 📦 手动安装
+
 **文件查看链接**：在浏览器中查看脚本内容
 
 - 主脚本：https://github.com/Big-flower-pig/Z-Panel-Pro/blob/main/Z-Panel.sh
 - 完整项目：https://github.com/Big-flower-pig/Z-Panel-Pro
 
-### 方式一：使用 curl 下载（推荐）
+### 方式一：使用 curl 下载
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh -o Z-Panel.sh; mkdir -p lib; cd lib; for file in core.sh error_handler.sh utils.sh lock.sh system.sh data_collector.sh ui.sh strategy.sh zram.sh kernel.sh swap.sh backup.sh monitor.sh menu.sh input_validator.sh transaction.sh lock_secure.sh decision_engine.sh stream_processor.sh cache_manager.sh feedback_loop.sh adaptive_tuner.sh; do curl -fsSL "https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/${file}" -o "${file}"; done; cd ..; sed -i 's/\r$//' Z-Panel.sh; chmod +x Z-Panel.sh; ./Z-Panel.sh
@@ -92,22 +122,31 @@ curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/hea
 
 ## 🚀 快速开始
 
+### 一键安装（推荐所有用户）
+
+```bash
+# 一键安装并注册全局命令
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/install.sh | bash
+
+# 安装完成后，使用全局命令
+z                    # 启动面板
+z -h                 # 查看帮助
+z -m                 # 实时监控
+z -s                 # 查看状态
+z -c                 # 配置向导
+```
+
 ### 轻量级模式安装（100MB内存）
 
 ```bash
-# 方法1: 克隆完整仓库（推荐）
-# 如果目录已存在，先删除或使用其他路径
+# 方法1: 克隆完整仓库
 rm -rf /opt/Z-Panel-Pro
 git clone https://github.com/Big-flower-pig/Z-Panel-Pro.git /opt/Z-Panel-Pro
 cd /opt/Z-Panel-Pro
 ./Z-Panel.sh
 
-# 方法2: 下载并运行轻量级安装脚本（需要root权限）
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/bin/lightweight-install.sh | bash
-
-# 方法3: 手动下载安装脚本
-wget https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/bin/lightweight-install.sh
-bash lightweight-install.sh
+# 方法2: 使用轻量级安装脚本（需要root权限）
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/bin/lightweight-install.sh | bash
 ```
 
 **注意**:
@@ -116,14 +155,14 @@ bash lightweight-install.sh
 - 如果 `/opt/Z-Panel-Pro` 目录已存在，请先删除或使用其他安装路径
 - 所有命令都需要root权限
 
-### 标准模式安装
+### 手动下载安装
 
 **文件查看链接**：在浏览器中查看脚本内容
 
 - 主脚本：https://github.com/Big-flower-pig/Z-Panel-Pro/blob/main/Z-Panel.sh
 - 完整项目：https://github.com/Big-flower-pig/Z-Panel-Pro
 
-### 方式一：使用 curl 下载（推荐）
+### 方式一：使用 curl 下载
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh -o Z-Panel.sh; mkdir -p lib; cd lib; for file in core.sh error_handler.sh utils.sh lock.sh system.sh data_collector.sh ui.sh strategy.sh zram.sh kernel.sh swap.sh backup.sh monitor.sh menu.sh input_validator.sh transaction.sh lock_secure.sh decision_engine.sh stream_processor.sh cache_manager.sh feedback_loop.sh adaptive_tuner.sh; do curl -fsSL "https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/${file}" -o "${file}"; done; cd ..; sed -i 's/\r$//' Z-Panel.sh; chmod +x Z-Panel.sh; ./Z-Panel.sh
@@ -150,11 +189,48 @@ sed -i 's/\r$//' Z-Panel.sh
 curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh | bash
 ```
 
+**推荐使用一键安装脚本**，自动处理所有换行符和权限问题：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/install.sh | bash
+```
+
 ---
 
 ## 💻 运行模式
 
-### 交互式菜单（轻量级/标准）
+### 使用全局命令 `z`（推荐）
+
+```bash
+# 启动面板
+z
+
+# 启动实时监控面板
+z -m
+
+# 显示系统状态
+z -s
+
+# 设置策略模式
+z --strategy balance
+
+# 创建系统备份
+z -b
+
+# 启用开机自启
+z -e
+
+# 启动智能优化（V8.0新功能）
+z --smart-optimize
+
+# 显示预测分析
+z --predict
+
+# 执行自适应调优
+z --adaptive-tune
+```
+
+### 使用完整路径
 
 ```bash
 # 如果是root用户，直接运行
@@ -162,32 +238,6 @@ curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/hea
 
 # 如果不是root用户，使用sudo
 sudo ./Z-Panel.sh
-```
-
-```bash
-# 启动实时监控面板
-./Z-Panel.sh -m
-
-# 显示系统状态
-./Z-Panel.sh -s
-
-# 设置策略模式
-./Z-Panel.sh --strategy balance
-
-# 创建系统备份
-./Z-Panel.sh -b
-
-# 启用开机自启
-./Z-Panel.sh -e
-
-# 启动智能优化（V8.0新功能）
-./Z-Panel.sh --smart-optimize
-
-# 显示预测分析
-./Z-Panel.sh --predict
-
-# 执行自适应调优
-./Z-Panel.sh --adaptive-tune
 ```
 
 **注意**: 所有命令都需要root权限。如果不是root用户，请在命令前添加`sudo`。
@@ -559,6 +609,13 @@ docker-compose -f docker/docker-compose.yml logs -f
 ---
 
 ## 🔄 版本历史
+
+### v8.1.1-Lightweight (2026-01)
+
+- ✨ 一键安装脚本（自动处理换行符和权限）
+- ✨ 全局 `z` 命令支持
+- ✨ 修复 LIB_DIR readonly 变量冲突
+- ✨ 改进安装体验
 
 ### v8.1.0-Lightweight (2026-01)
 
