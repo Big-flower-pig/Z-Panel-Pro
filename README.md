@@ -15,6 +15,15 @@ Z-Panel Pro 是一个以单文件 Bash 脚本为核心的内存与虚拟内存�
 
 ## 重构亮点 (v6.0.0-Refactored)
 
+### 自包含设计
+
+**最重要的改进**：所有共享函数已内联到主脚本中，不再依赖外部库文件。
+
+- ✅ 删除了 `lib/common.sh` 依赖
+- ✅ 生成的服务脚本（`zram-start.sh`、`dynamic-adjust.sh`）包含所有必需的函数
+- ✅ 简化了部署流程，只需复制主脚本即可使用
+- ✅ 减少了文件依赖，提高了可靠性
+
 ### 架构改进
 
 - ✅ **模块化设计**：将代码按功能划分为独立模块
@@ -146,9 +155,6 @@ sudo z
 
 - **备份**：`/opt/z-panel/backup`
   - `backup_YYYYMMDD_HHMMSS/` - 系统配置备份
-
-- **共享库**：`/opt/z-panel/lib`
-  - `common.sh` - 共享函数库
 
 ### 持久化服务
 
@@ -419,6 +425,16 @@ sudo z
 2. 查看调整日志：`tail -f /opt/z-panel/logs/dynamic.log`
 3. 手动执行：`bash /opt/z-panel/dynamic-adjust.sh`
 
+### 服务脚本无法启动
+
+如果 `zram.service` 无法启动，检查：
+
+1. 确认配置文件存在：`/opt/z-panel/conf/zram.conf`
+2. 查看服务日志：`journalctl -u zram.service`
+3. 手动运行服务脚本：`/opt/z-panel/zram-start.sh`
+
+由于 v6.0.0-Refactored 版本已将所有函数内联，服务脚本不依赖外部库文件。
+
 ### UI显示异常
 
 1. 检查终端宽度：确保终端宽度至少62字符
@@ -438,8 +454,7 @@ sudo z
 
 ## 更多信息
 
-- **主脚本**：`Z-Panel.sh`（仓库根）
-- **共享库**：`lib/common.sh`
+- **主脚本**：`Z-Panel.sh`（仓库根，包含所有功能）
 - **技术审查**：`Z-Panel_Technical_Review_Report.md`
 - **GitHub 仓库**：https://github.com/Big-flower-pig/Z-Panel-Pro
 
