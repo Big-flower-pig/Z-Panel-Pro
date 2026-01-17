@@ -49,8 +49,11 @@ Z-Panel Pro 是一款功能强大的企业级 Linux 内存优化工具，通过�
 ### 方法一：一键安装（推荐）
 
 ```bash
-# 下载安装脚本
-wget https://github.com/Z-Panel-Pro/Z-Panel-Pro/raw/master/install.sh -O install.sh
+# 下载安装脚本（使用 wget）
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/install.sh -O install.sh
+
+# 或使用 curl
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/install.sh -o install.sh
 
 # 执行安装
 chmod +x install.sh
@@ -61,7 +64,7 @@ sudo ./install.sh
 
 ```bash
 # 克隆仓库
-git clone https://github.com/Z-Panel-Pro/Z-Panel-Pro.git
+git clone https://github.com/Big-flower-pig/Z-Panel-Pro.git
 cd Z-Panel-Pro
 
 # 复制到安装目录
@@ -74,7 +77,60 @@ sudo chmod +x /opt/Z-Panel-Pro/Z-Panel.sh
 sudo ln -sf /opt/Z-Panel-Pro/Z-Panel.sh /usr/local/bin/zpanel
 ```
 
-### 方法三：使用包管理器
+### 方法三：直接下载主脚本（快速体验）
+
+```bash
+# 下载主脚本（使用 wget）
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/Z-Panel.sh -O Z-Panel.sh
+
+# 或使用 curl
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/Z-Panel.sh -o Z-Panel.sh
+
+# 下载依赖库文件
+mkdir -p lib
+cd lib
+
+# 使用 wget 下载
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/core.sh
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/error_handler.sh
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/utils.sh
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/lock.sh
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/system.sh
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/data_collector.sh
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/ui.sh
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/strategy.sh
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/zram.sh
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/kernel.sh
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/swap.sh
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/backup.sh
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/monitor.sh
+wget https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/menu.sh
+
+# 或使用 curl 下载
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/core.sh -o core.sh
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/error_handler.sh -o error_handler.sh
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/utils.sh -o utils.sh
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/lock.sh -o lock.sh
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/system.sh -o system.sh
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/data_collector.sh -o data_collector.sh
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/ui.sh -o ui.sh
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/strategy.sh -o strategy.sh
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/zram.sh -o zram.sh
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/kernel.sh -o kernel.sh
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/swap.sh -o swap.sh
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/backup.sh -o backup.sh
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/monitor.sh -o monitor.sh
+curl -fsSL https://github.com/Big-flower-pig/Z-Panel-Pro/raw/main/lib/menu.sh -o menu.sh
+cd ..
+
+# 设置执行权限
+chmod +x Z-Panel.sh
+
+# 运行程序
+sudo ./Z-Panel.sh
+```
+
+### 方法四：使用包管理器
 
 ```bash
 # Ubuntu/Debian
@@ -358,8 +414,8 @@ IO_FUSE_THRESHOLD=85
 
 ## 📞 联系方式
 
-- **项目主页**: https://github.com/Z-Panel-Pro/Z-Panel-Pro
-- **问题反馈**: https://github.com/Z-Panel-Pro/Z-Panel-Pro/issues
+- **项目主页**: https://github.com/Big-flower-pig/Z-Panel-Pro
+- **问题反馈**: https://github.com/Big-flower-pig/Z-Panel-Pro/issues
 - **文档**: https://docs.zpanel.pro
 
 ---
