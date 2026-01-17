@@ -2264,48 +2264,48 @@ show_main_menu() {
     clear
 
     # 顶部标题栏
-    printf "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}\n"
-    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_center "Z-Panel Pro v${SCRIPT_VERSION} 主控菜单" 57)"
-    printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
-    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "系统: RAM:${TOTAL_MEMORY_MB}MB CPU:${CPU_CORES}Cores ${CURRENT_DISTRO} ${CURRENT_VERSION}" 57)"
-    printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+    echo -e "${CYAN}┌─────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${CYAN}│${WHITE}$(pad_center "Z-Panel Pro v${SCRIPT_VERSION} 主控菜单" 57)${CYAN}│${NC}"
+    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
+    echo -e "${CYAN}│${WHITE}$(pad_left "系统: RAM:${TOTAL_MEMORY_MB}MB CPU:${CPU_CORES}Cores ${CURRENT_DISTRO} ${CURRENT_VERSION}" 57)${CYAN}│${NC}"
+    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
+    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
 
     # 主要功能
-    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "🚀 主要功能" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}1.${NC} 一键优化[${YELLOW}当前: ${STRATEGY_MODE}${NC}]" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}2.${NC} 状态监控" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}3.${NC} 日志管理" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+    echo -e "${CYAN}│${WHITE}$(pad_left "🚀 主要功能" 57)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}1.${NC} 一键优化[${YELLOW}当前: ${STRATEGY_MODE}${NC}]$(pad_left "" 19)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}2.${NC} 状态监控$(pad_left "" 40)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}3.${NC} 日志管理$(pad_left "" 40)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
 
     # 高级功能
-    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "⚙️  高级功能" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}4.${NC} 切换优化模式[${YELLOW}保守/平衡/激进${NC}]" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}5.${NC} 配置 ZRAM" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}6.${NC} 配置虚拟内存" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}7.${NC} 动态调整模式" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+    echo -e "${CYAN}│${WHITE}$(pad_left "⚙️  高级功能" 57)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}4.${NC} 切换优化模式[${YELLOW}保守/平衡/激进${NC}]${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}5.${NC} 配置 ZRAM$(pad_left "" 40)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}6.${NC} 配置虚拟内存$(pad_left "" 37)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}7.${NC} 动态调整模式$(pad_left "" 36)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
 
     # 系统管理
-    printf "${CYAN}│${WHITE}%s${CYAN}│${NC}\n" "$(pad_left "🛠️  系统管理" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}8.${NC} 查看系统状态" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}9.${NC} 停用 ZRAM" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}10.${NC} 还原备份" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_left "  ${GREEN}0.${NC} 退出程序" 57)"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "" 57)"
+    echo -e "${CYAN}│${WHITE}$(pad_left "🛠️  系统管理" 57)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}8.${NC} 查看系统状态$(pad_left "" 37)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}9.${NC} 停用 ZRAM$(pad_left "" 40)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}10.${NC} 还原备份$(pad_left "" 39)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}0.${NC} 退出程序$(pad_left "" 41)${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}$(pad_center "" 57)${CYAN}│${NC}"
 
     # 状态栏
-    printf "${CYAN}├─────────────────────────────────────────────────────────┤${NC}\n"
+    echo -e "${CYAN}├─────────────────────────────────────────────────────────┤${NC}"
     local zram_status=$([[ $ZRAM_ENABLED == true ]] && echo -e "${GREEN}●${NC} 已启用" || echo -e "${RED}○${NC} 未启用")
     local dynamic_status=$([[ $DYNAMIC_MODE == true ]] && echo -e "${GREEN}●${NC} 已启用" || echo -e "${RED}○${NC} 未启用")
     local status_text="  ZRAM: ${zram_status}  │  动态: ${dynamic_status}"
-    printf "${CYAN}│${NC}%s${CYAN}│${NC}\n" "$(pad_center "$status_text" 57)"
-    printf "${CYAN}└─────────────────────────────────────────────────────────┘${NC}\n"
-    printf "\n"
-    printf "${WHITE}请选择 [0-10]: ${NC}"
+    echo -e "${CYAN}│${NC}$(pad_center "$status_text" 57)${CYAN}│${NC}"
+    echo -e "${CYAN}└─────────────────────────────────────────────────────────┘${NC}"
+    echo ""
+    echo -ne "${WHITE}请选择 [0-10]: ${NC}"
 }
 
 strategy_menu() {
