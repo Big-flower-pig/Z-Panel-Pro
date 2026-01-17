@@ -54,13 +54,13 @@ Z-Panel Pro 是一款功能强大的企业级 Linux 内存优化工具，通过�
 ### 方式一：使用 curl 下载（推荐）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh -o Z-Panel.sh; mkdir -p lib; cd lib; for file in core.sh error_handler.sh utils.sh lock.sh system.sh data_collector.sh ui.sh strategy.sh zram.sh kernel.sh swap.sh backup.sh monitor.sh menu.sh; do curl -fsSL "https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/${file}" -o "${file}"; done; cd ..; chmod +x Z-Panel.sh; ./Z-Panel.sh
+curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh -o Z-Panel.sh; mkdir -p lib; cd lib; for file in core.sh error_handler.sh utils.sh lock.sh system.sh data_collector.sh ui.sh strategy.sh zram.sh kernel.sh swap.sh backup.sh monitor.sh menu.sh; do curl -fsSL "https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/${file}" -o "${file}"; done; cd ..; sed -i 's/\r$//' Z-Panel.sh; chmod +x Z-Panel.sh; ./Z-Panel.sh
 ```
 
 ### 方式二：使用 wget 下载
 
 ```bash
-wget -q https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh; mkdir -p lib; cd lib; for file in core.sh error_handler.sh utils.sh lock.sh system.sh data_collector.sh ui.sh strategy.sh zram.sh kernel.sh swap.sh backup.sh monitor.sh menu.sh; do wget -q "https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/${file}"; done; cd ..; chmod +x Z-Panel.sh; ./Z-Panel.sh
+wget -q https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/Z-Panel.sh; mkdir -p lib; cd lib; for file in core.sh error_handler.sh utils.sh lock.sh system.sh data_collector.sh ui.sh strategy.sh zram.sh kernel.sh swap.sh backup.sh monitor.sh menu.sh; do wget -q "https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/lib/${file}"; done; cd ..; sed -i 's/\r$//' Z-Panel.sh; chmod +x Z-Panel.sh; ./Z-Panel.sh
 ```
 
 **故障排除**：
