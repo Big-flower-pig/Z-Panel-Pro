@@ -198,13 +198,13 @@ detect_nerd_font() {
     done
 
     # 方法 3: 检查环境变量
-    if [[ -n "${TERM_PROGRAM:-}" ]] && [[ "$TERM_PROGRAM" == "iTerm.app" ]]; then
+    if [[ -n "${TERM_PROGRAM:-}" ]] && [[ "${TERM_PROGRAM:-}" == "iTerm.app" ]]; then
         # iTerm2 通常支持 Nerd Font
         has_nerd_font=true
     fi
 
     if [[ -n "${TERMINAL_EMULATOR:-}" ]]; then
-        if echo "$TERMINAL_EMULATOR" | grep -qi "kitty\|alacritty\|wezterm"; then
+        if echo "${TERMINAL_EMULATOR:-}" | grep -qi "kitty\|alacritty\|wezterm"; then
             has_nerd_font=true
         fi
     fi
