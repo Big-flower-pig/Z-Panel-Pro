@@ -174,7 +174,10 @@ handle_error() {
     log_error "${error_detail}"
 
     # 调用自定义错误处理器
-    local handler="${ERROR_HANDLERS[${context}]}"
+    local handler=""
+    if [[ -v "ERROR_HANDLERS[${context}]" ]] 2>/dev/null; then
+        handler="${ERROR_HANDLERS[${context}]}"
+    fi
     if [[ -n "${handler}" ]] && [[ -x "${handler}" ]]; then
         "${handler}" "${context}" "${message}" "${exit_code}" || true
     fi
