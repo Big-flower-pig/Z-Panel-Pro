@@ -342,8 +342,8 @@ create_zram_service() {
     cat > "${service_script}" <<'SERVICE_SCRIPT'
 #!/bin/bash
 set -o pipefail
-CONF_DIR="/opt/z-panel/conf"
-LOG_DIR="/opt/z-panel/logs"
+CONF_DIR="/opt/Z-Panel-Pro/conf"
+LOG_DIR="/opt/Z-Panel-Pro/logs"
 
 log() {
     local level=$1
