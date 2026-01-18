@@ -45,17 +45,22 @@ detect_system() {
 # ==============================================================================
 detect_distro() {
     if [[ -f /etc/os-release ]]; then
-        # 从 /etc/os-release 读取信息
-        source /etc/os-release
+        # 从 /etc/os-release 读取信息（避免只读变量冲突）
+        local os_name os_id os_version os_version_id os_codename
+        os_name=$(grep '^NAME=' /etc/os-release | cut -d'=' -f2 | tr -d '"')
+        os_id=$(grep '^ID=' /etc/os-release | cut -d'=' -f2 | tr -d '"')
+        os_version=$(grep '^VERSION=' /etc/os-release | cut -d'=' -f2 | tr -d '"')
+        os_version_id=$(grep '^VERSION_ID=' /etc/os-release | cut -d'=' -f2 | tr -d '"')
+        os_codename=$(grep '^VERSION_CODENAME=' /etc/os-release | cut -d'=' -f2 | tr -d '"')
 
-        SYSTEM_INFO[distro]="${NAME}"
-        SYSTEM_INFO[distro_id]="${ID}"
-        SYSTEM_INFO[version]="${VERSION}"
-        SYSTEM_INFO[version_id]="${VERSION_ID:-}"
-        SYSTEM_INFO[codename]="${VERSION_CODENAME:-}"
+        SYSTEM_INFO[distro]="${os_name}"
+        SYSTEM_INFO[distro_id]="${os_id}"
+        SYSTEM_INFO[version]="${os_version}"
+        SYSTEM_INFO[version_id]="${os_version_id:-}"
+        SYSTEM_INFO[codename]="${os_codename:-}"
 
         # 转换为小写以统一处理
-        SYSTEM_INFO[distro]="${ID,,}"
+        SYSTEM_INFO[distro]="${os_id,,}"
     elif [[ -f /etc/redhat-release ]]; then
         SYSTEM_INFO[distro]="centos"
         SYSTEM_INFO[distro_id]="centos"
