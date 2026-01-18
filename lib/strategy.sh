@@ -30,7 +30,7 @@ load_strategy_config() {
 # ==============================================================================
 save_strategy_config() {
     local content
-    cat <<'EOF'
+    content=$(cat <<'EOF'
 # ============================================================================
 # Z-Panel Pro 策略配置
 # ============================================================================
@@ -44,6 +44,7 @@ save_strategy_config() {
 
 STRATEGY_MODE=${STRATEGY_MODE}
 EOF
+)
 
     if save_config_file "${STRATEGY_CONFIG_FILE}" "${content}"; then
         log_info "策略配置已保存: ${STRATEGY_MODE}"

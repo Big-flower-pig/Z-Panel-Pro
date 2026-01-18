@@ -8,6 +8,9 @@
 # @license       MIT License
 # ==============================================================================
 
+# 全局变量：用于返回 ZRAM 设备名
+declare -g ZRAM_DEVICE_NAME=""
+
 # ==============================================================================
 # 获取可用ZRAM设备
 # @return: 设备名，如zram0
@@ -44,7 +47,7 @@ get_available_zram_device() {
 
 # ==============================================================================
 # 初始化ZRAM设备
-# @return: 设备名
+# @return: 设备名（通过全局变量 ZRAM_DEVICE_NAME）
 # ==============================================================================
 initialize_zram_device() {
     # 加载ZRAM模块
@@ -88,9 +91,9 @@ initialize_zram_device() {
         handle_error "ZRAM_INIT" "ZRAM 设备不存在: /dev/${zram_device}" "exit"
     fi
 
+    # 通过全局变量返回设备名
+    ZRAM_DEVICE_NAME="${zram_device}"
     log_info "ZRAM 设备已初始化: ${zram_device}"
-    # 输出设备名（重定向日志到stderr以避免干扰）
-    echo "${zram_device}"
     return 0
 }
 
@@ -472,7 +475,7 @@ save_zram_config() {
     fi
 
     local content
-    cat <<EOF
+    content=$(cat <<EOF
 # ============================================================================
 # Z-Panel Pro ZRAM 配置
 # ============================================================================
@@ -493,6 +496,7 @@ PRIORITY=$(get_config 'zram_priority')
 SIZE=${zram_size}
 PHYS_LIMIT=${phys_limit}
 EOF
+)
 
     if save_config_file "${ZRAM_CONFIG_FILE}" "${content}"; then
         log_info "ZRAM 配置已保存"
@@ -682,12 +686,14 @@ configure_zram() {
         }
     fi
 
-    # 初始化设备（重定向stderr以避免捕获日志）
+    # 初始化设备（通过全局变量获取设备名）
     local zram_device
-    zram_device=$(initialize_zram_device 2>/dev/null) || {
+    ZRAM_DEVICE_NAME=""
+    initialize_zram_device || {
         handle_error "ZRAM_CONFIG" "初始化 ZRAM 设备失败"
         return 1
     }
+    zram_device="${ZRAM_DEVICE_NAME}"
     log_info "使用 ZRAM 设备: ${zram_device}"
 
     # 配置压缩
