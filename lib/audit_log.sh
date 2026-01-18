@@ -50,31 +50,31 @@ init_audit_log() {
 
     # 初始化审计日志路径
     if [[ -z "${AUDIT_LOG_DIR}" ]]; then
+        # 如果LOG_DIR未定义，使用默认值
         if [[ -z "${LOG_DIR}" ]]; then
-            log_error "LOG_DIR 未定义"
-            return 1
+            LOG_DIR="/opt/Z-Panel-Pro/logs"
+            log_warn "LOG_DIR 未定义，使用默认值: ${LOG_DIR}"
         fi
         AUDIT_LOG_DIR="${LOG_DIR}/audit"
         AUDIT_LOG_FILE="${AUDIT_LOG_DIR}/audit.log"
     fi
 
-    # 验证路径
-    if ! validate_path "${AUDIT_LOG_DIR}"; then
-        log_error "无效的审计日志目录路径: ${AUDIT_LOG_DIR}"
-        return 1
-    fi
+    # 验证路径（忽略错误）
+    validate_path "${AUDIT_LOG_DIR}" 2>/dev/null || {
+        log_warn "审计日志目录路径验证失败: ${AUDIT_LOG_DIR}"
+    }
 
-    # 创建审计日志目录
+    # 创建审计日志目录（忽略错误）
     mkdir -p "${AUDIT_LOG_DIR}" 2>/dev/null || {
-        log_error "无法创建审计日志目录: ${AUDIT_LOG_DIR}"
-        return 1
+        log_warn "无法创建审计日志目录: ${AUDIT_LOG_DIR}"
+        return 0
     }
 
     chmod 700 "${AUDIT_LOG_DIR}" 2>/dev/null || true
 
     # 设置文件权限
     if [[ ! -f "${AUDIT_LOG_FILE}" ]]; then
-        touch "${AUDIT_LOG_FILE}" 2>/dev/null
+        touch "${AUDIT_LOG_FILE}" 2>/dev/null || true
         chmod 600 "${AUDIT_LOG_FILE}" 2>/dev/null || true
     fi
 

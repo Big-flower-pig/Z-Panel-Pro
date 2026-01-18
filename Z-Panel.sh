@@ -165,23 +165,24 @@ disable_autostart() {
 # @return: 0成功，1失败
 # ==============================================================================
 init_logging_system() {
-    # 创建日志目录
-    if ! mkdir -p "${LOG_DIR}" 2>/dev/null; then
-        log_error "无法创建日志目录: ${LOG_DIR}"
-        return 1
-    fi
+    # 创建日志目录（忽略错误）
+    mkdir -p "${LOG_DIR}" 2>/dev/null || {
+        echo "警告: 无法创建日志目录: ${LOG_DIR}" >&2
+        # 继续运行，不退出
+    }
 
-    # 设置文件权限
+    # 设置文件权限（忽略错误）
     ensure_file_permissions "${LOG_FILE}" 640 2>/dev/null || true
     ensure_dir_permissions "${LOG_DIR}" 750 2>/dev/null || true
 
-    # 初始化日志
-    if ! init_logging "${LOG_FILE}" 2>/dev/null; then
-        log_error "初始化日志失败"
-        return 1
-    fi
+    # 初始化日志（忽略错误）
+    init_logging "${LOG_FILE}" 2>/dev/null || {
+        echo "警告: 初始化日志失败，继续运行..." >&2
+        # 继续运行，不退出
+    }
 
-    set_log_level "INFO"
+    set_log_level "INFO" 2>/dev/null || true
+    return 0
 }
 
 # ==============================================================================
@@ -261,30 +262,44 @@ load_system_config() {
 init_system() {
     log_info "初始化系统..."
 
-    # 初始化配置目录
-    init_config_dirs
+    # 初始化配置目录（忽略错误）
+    init_config_dirs || {
+        log_warn "配置目录初始化失败，使用默认值..."
+    }
 
-    # 初始化日志系统
-    init_logging_system
+    # 初始化日志系统（忽略错误）
+    init_logging_system || {
+        log_warn "日志系统初始化失败，继续运行..."
+    }
 
-    # 初始化审计日志
-    init_audit_log
+    # 初始化审计日志（忽略错误）
+    init_audit_log || {
+        log_warn "审计日志初始化失败，继续运行..."
+    }
 
-    # 检查运行环境
-    check_runtime_env
+    # 检查运行环境（必须成功）
+    check_runtime_env || {
+        log_error "运行环境检查失败"
+        return 1
+    }
 
-    # 加载系统配置
-    load_system_config
+    # 加载系统配置（忽略错误）
+    load_system_config || {
+        log_warn "系统配置加载失败，使用默认值..."
+    }
 
     # 设置策略模式
     local current_strategy
-    current_strategy=$(get_strategy_mode)
+    current_strategy=$(get_strategy_mode 2>/dev/null || echo "")
     STRATEGY_MODE="${current_strategy:-${STRATEGY_BALANCE}}"
 
-    # 记录系统启动审计
-    audit_system_start
+    # 记录系统启动审计（忽略错误）
+    audit_system_start || {
+        log_warn "系统启动审计记录失败..."
+    }
 
     log_info "系统初始化完成"
+    return 0
 }
 
 # ==============================================================================
@@ -633,8 +648,10 @@ main() {
         exit 1
     fi
 
-    # 初始化系统
-    init_system
+    # 初始化系统（忽略错误，继续执行）
+    init_system || {
+        log_warn "系统初始化部分失败，但继续运行..."
+    }
 
     # 设置策略模式
     if [[ -n "${strategy}" ]]; then
