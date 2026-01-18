@@ -12,6 +12,7 @@
 # 系统信息存储（已在 core.sh 中声明）
 # ==============================================================================
 # SYSTEM_INFO 关联数组在 core.sh 中已定义，此处仅使用
+# 需要添加的字段: country, timezone
 
 # ==============================================================================
 # 系统检测主函数
@@ -33,6 +34,9 @@ detect_system() {
 
     # 检测环境
     detect_environment
+
+    # 检测地理位置
+    detect_geolocation
 
     # 输出系统信息
     log_system_info
@@ -84,26 +88,26 @@ detect_distro() {
 # 检测包管理器
 # ==============================================================================
 detect_package_manager() {
-    # 检测包管理器
-    if check_command apt-get; then
+    # 直接使用 command -v 检测，更简洁可靠
+    if command -v apt-get &>/dev/null; then
         SYSTEM_INFO[package_manager]="apt"
         SYSTEM_INFO[package_manager_family]="debian"
-    elif check_command apk; then
+    elif command -v apk &>/dev/null; then
         SYSTEM_INFO[package_manager]="apk"
         SYSTEM_INFO[package_manager_family]="alpine"
-    elif check_command dnf; then
+    elif command -v dnf &>/dev/null; then
         SYSTEM_INFO[package_manager]="dnf"
         SYSTEM_INFO[package_manager_family]="rpm"
-    elif check_command yum; then
+    elif command -v yum &>/dev/null; then
         SYSTEM_INFO[package_manager]="yum"
         SYSTEM_INFO[package_manager_family]="rpm"
-    elif check_command zypper; then
+    elif command -v zypper &>/dev/null; then
         SYSTEM_INFO[package_manager]="zypper"
         SYSTEM_INFO[package_manager_family]="rpm"
-    elif check_command pacman; then
+    elif command -v pacman &>/dev/null; then
         SYSTEM_INFO[package_manager]="pacman"
         SYSTEM_INFO[package_manager_family]="arch"
-    elif check_command emerge; then
+    elif command -v emerge &>/dev/null; then
         SYSTEM_INFO[package_manager]="emerge"
         SYSTEM_INFO[package_manager_family]="gentoo"
     else
@@ -173,6 +177,87 @@ detect_environment() {
 }
 
 # ==============================================================================
+# 检测地理位置
+# ==============================================================================
+detect_geolocation() {
+    log_debug "正在检测地理位置..."
+
+    local ip country
+
+    # 获取公网IP
+    if command -v curl &>/dev/null; then
+        ip=$(curl -s --max-time 5 ip.sb 2>/dev/null || curl -s --max-time 5 ifconfig.me 2>/dev/null || curl -s --max-time 5 icanhazip.com 2>/dev/null)
+    elif command -v wget &>/dev/null; then
+        ip=$(wget -qO- --timeout=5 ip.sb 2>/dev/null || wget -qO- --timeout=5 ifconfig.me 2>/dev/null)
+    fi
+
+    if [[ -z "${ip}" ]]; then
+        log_debug "无法获取公网IP，跳过地理检测"
+        SYSTEM_INFO[country]="Unknown"
+        SYSTEM_INFO[timezone]="UTC"
+        return 0
+    fi
+
+    log_debug "公网IP: ${ip}"
+
+    # 获取国家信息
+    if command -v curl &>/dev/null; then
+        country=$(curl -s --max-time 5 "http://ip-api.com/json/${ip}?fields=country,countryCode" 2>/dev/null | grep -oP '"country":"\K[^"]+' | head -1)
+    elif command -v wget &>/dev/null; then
+        country=$(wget -qO- --timeout=5 "http://ip-api.com/json/${ip}?fields=country,countryCode" 2>/dev/null | grep -oP '"country":"\K[^"]+' | head -1)
+    fi
+
+    # 设置国家信息
+    SYSTEM_INFO[country]="${country:-Unknown}"
+
+    # 根据国家设置时区（简化版）
+    case "${country}" in
+        "China"|"中国")
+            SYSTEM_INFO[timezone]="Asia/Shanghai"
+            ;;
+        "United States"|"美国")
+            SYSTEM_INFO[timezone]="America/New_York"
+            ;;
+        "Japan"|"日本")
+            SYSTEM_INFO[timezone]="Asia/Tokyo"
+            ;;
+        "Germany"|"德国")
+            SYSTEM_INFO[timezone]="Europe/Berlin"
+            ;;
+        "United Kingdom"|"英国")
+            SYSTEM_INFO[timezone]="Europe/London"
+            ;;
+        *)
+            SYSTEM_INFO[timezone]="UTC"
+            ;;
+    esac
+
+    log_debug "国家: ${SYSTEM_INFO[country]}, 时区: ${SYSTEM_INFO[timezone]}"
+    return 0
+}
+
+# ==============================================================================
+# 获取国家信息
+# ==============================================================================
+get_country() {
+    echo "${SYSTEM_INFO[country]:-Unknown}"
+}
+
+# ==============================================================================
+# 获取时区信息
+# ==============================================================================
+get_timezone() {
+    echo "${SYSTEM_INFO[timezone]:-UTC}"
+}
+
+# ==============================================================================
+# 检查是否在中国
+# ==============================================================================
+is_china() {
+    [[ "${SYSTEM_INFO[country]}" == "China" ]] || [[ "${SYSTEM_INFO[country]}" == "中国" ]]
+}
+
+# ==============================================================================
 # 检测虚拟化平台
 # ==============================================================================
 detect_hypervisor() {
@@ -218,6 +303,8 @@ log_system_info() {
     log_info "容器: $(get_boolean_string ${SYSTEM_INFO[is_container]})"
     log_info "虚拟机: $(get_boolean_string ${SYSTEM_INFO[is_virtual]})"
     [[ "${SYSTEM_INFO[hypervisor]}" != "none" ]] && log_info "虚拟化平台: ${SYSTEM_INFO[hypervisor]}"
+    [[ "${SYSTEM_INFO[country]}" != "Unknown" ]] && log_info "国家: ${SYSTEM_INFO[country]}"
+    [[ "${SYSTEM_INFO[timezone]}" != "UTC" ]] && log_info "时区: ${SYSTEM_INFO[timezone]}"
 }
 
 # ==============================================================================
@@ -305,7 +392,7 @@ get_kernel_version() {
 # 检查内核版本
 # ==============================================================================
 check_kernel_version() {
-    local min_version="$1"
+    local min_version="${1:-${MIN_KERNEL_VERSION:-5.4}}"
     local current_version="${SYSTEM_INFO[kernel_release]}"
 
     # 解析版本号
@@ -366,10 +453,8 @@ check_zram_support() {
 
 # ==============================================================================
 # 检查systemd
+# 注意：check_systemd() 已移至 lib/utils.sh，使用该模块的版本
 # ==============================================================================
-check_systemd() {
-    check_command systemctl && check_command journalctl
-}
 
 # ==============================================================================
 # 安装软件包
@@ -584,6 +669,7 @@ export -f detect_hardware
 export -f detect_kernel
 export -f detect_environment
 export -f detect_hypervisor
+export -f detect_geolocation
 export -f log_system_info
 export -f get_distro
 export -f get_distro_id
@@ -612,3 +698,6 @@ export -f is_virtual_machine
 export -f get_system_summary
 export -f get_system_info_json
 export -f get_boolean_string
+export -f get_country
+export -f get_timezone
+export -f is_china

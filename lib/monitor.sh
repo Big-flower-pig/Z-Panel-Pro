@@ -50,12 +50,14 @@ show_zram_status() {
     local algo="unknown"
     local ratio="1.00"
 
-    if echo "${zram_status}" | grep -q "enabled.*true"; then
+    if echo "${zram_status}" | grep -q '"enabled":\s*true'; then
         algo=$(echo "${zram_status}" | grep -o '"algorithm":"[^"]*"' | cut -d'"' -f4)
         ratio=$(echo "${zram_status}" | grep -o '"compression_ratio":"[^"]*"' | cut -d'"' -f4)
-    fi
 
-    [[ -z "${ratio}" ]] || [[ "${ratio}" == "0" ]] && ratio="1.00"
+        # 验证提取的值
+        [[ -z "${algo}" ]] && algo="unknown"
+        [[ -z "${ratio}" ]] || [[ "${ratio}" == "0" ]] && ratio="1.00"
+    fi
 
     ui_draw_row " 算法: ${COLOR_CYAN}${algo}${COLOR_NC}  压缩比: ${COLOR_YELLOW}${ratio}x${COLOR_NC}"
 
@@ -133,7 +135,7 @@ show_monitor() {
     local force_refresh=true
 
     while true; do
-        # 读取数据
+        # 读取数据（使用缓存减少系统调用）
         read -r mem_total mem_used mem_avail buff_cache <<< "$(get_memory_info true)"
         read -r zram_total zram_used <<< "$(get_zram_usage)"
         read -r swap_total swap_used <<< "$(get_swap_info true)"
@@ -227,3 +229,16 @@ show_status() {
     ui_draw_bottom
     echo ""
 }
+
+# ==============================================================================
+# 导出函数
+# ==============================================================================
+export -f cleanup_monitor
+export -f show_memory_status
+export -f show_zram_status
+export -f show_swap_status
+export -f show_kernel_status
+export -f show_protection_status
+export -f show_system_info
+export -f show_monitor
+export -f show_status

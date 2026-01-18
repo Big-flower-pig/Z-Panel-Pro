@@ -55,7 +55,7 @@ update_cache() {
     read -r CACHE_DATA[swap_total] CACHE_DATA[swap_used] <<< "${swap_info}"
 
     # 采集ZRAM状态
-    CACHE_DATA[zram_enabled]=$(is_zram_enabled && echo "1" || echo "0")
+    CACHE_DATA[zram_enabled]=$(is_zram_enabled && echo "true" || echo "false")
 
     CACHE_LAST_UPDATE=${current_time}
     log_debug "缓存已更新"
@@ -301,12 +301,6 @@ get_zram_compression_ratio() {
 # CPU信息采集
 # ==============================================================================
 
-# 获取CPU核心数
-# @return: 核心数
-get_cpu_cores() {
-    nproc 2>/dev/null || echo "1"
-}
-
 # 获取CPU使用率
 # @return: 使用率百分比
 get_cpu_usage() {
@@ -356,3 +350,28 @@ get_swappiness() {
 get_load_average() {
     awk '{print $1, $2, $3}' /proc/loadavg
 }
+
+# ==============================================================================
+# 导出函数
+# ==============================================================================
+export -f update_cache
+export -f clear_cache
+export -f get_cache_value
+export -f calculate_cache_hit_rate
+export -f get_cache_stats
+export -f reset_cache_stats
+export -f get_memory_info
+export -f get_memory_usage
+export -f get_swap_info
+export -f get_swap_usage
+export -f is_zram_enabled
+export -f get_zram_usage
+export -f get_zram_usage_percent
+export -f get_zram_status
+export -f get_zram_algorithm
+export -f get_zram_compression_ratio
+export -f get_cpu_usage
+export -f get_disk_info
+export -f get_kernel_param
+export -f get_swappiness
+export -f get_load_average

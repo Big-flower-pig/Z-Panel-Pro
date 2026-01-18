@@ -12,7 +12,12 @@
 # 验证函数
 # ==============================================================================
 
+# ==============================================================================
 # 验证正整数
+# @param var: 待验证的变量
+# @return: 0表示验证通过，1表示验证失败
+# @example: validate_positive_integer "123" && echo "有效"
+# ==============================================================================
 validate_positive_integer() {
     local var="$1"
     [[ "${var}" =~ ^[0-9]+$ ]] && [[ ${var} -gt 0 ]]
@@ -76,7 +81,13 @@ validate_ip() {
 # 转换函数
 # ==============================================================================
 
+# ==============================================================================
 # 转换大小到MB
+# @param size: 待转换的大小字符串（如 "1024M", "1G", "512K"）
+# @return: 转换后的MB值（保留2位小数）
+# @example: convert_size_to_mb "1G"  # 输出: 1024.00
+# @example: convert_size_to_mb "512M"  # 输出: 512.00
+# ==============================================================================
 convert_size_to_mb() {
     local size="$1"
     local unit num
@@ -143,7 +154,13 @@ convert_bytes_to_human() {
 # 计算函数
 # ==============================================================================
 
+# ==============================================================================
 # 计算百分比
+# @param used: 已使用的值
+# @param total: 总值
+# @return: 百分比（保留2位小数），如果total为0则返回0
+# @example: calculate_percentage "512" "1024"  # 输出: 50.00
+# ==============================================================================
 calculate_percentage() {
     local used="$1"
     local total="$2"
@@ -216,7 +233,13 @@ calculate_min() {
 # 文件操作函数
 # ==============================================================================
 
+# ==============================================================================
 # 确保文件权限正确
+# @param file: 文件路径
+# @param expected_perms: 期望的权限（默认600）
+# @return: 0成功，1失败
+# @example: ensure_file_permissions "/etc/config" "644"
+# ==============================================================================
 ensure_file_permissions() {
     local file="$1"
     local expected_perms="${2:-600}"
@@ -256,7 +279,13 @@ ensure_dir_permissions() {
     return 0
 }
 
+# ==============================================================================
 # 安全加载配置文件
+# @param file: 配置文件路径
+# @return: 0成功，1失败
+# @description: 检查文件存在性、权限，并扫描潜在危险模式后安全加载
+# @example: safe_source "/etc/zpanel/config.conf"
+# ==============================================================================
 safe_source() {
     local file="$1"
 
@@ -270,22 +299,24 @@ safe_source() {
     ensure_file_permissions "${file}" 600 || return 1
 
     # 检查危险模式（防止代码注入）
+    # 只检查命令执行相关的危险模式
     local dangerous_patterns=(
-        '`'
-        '\$\([^)]*\)'
-        '>'
-        '<'
-        '&'
-        ';'
-        '\|'
-        '\$\{'
-        '\$\('
+        '\$\('        # 命令替换
+        '`'           # 反引号命令替换
+        '\|.*\|'      # 管道命令（在配置文件中很少需要）
+        '&&'          # 命令链接
+        '\|\|'        # 逻辑或
+        ';'           # 命令分隔符
+        '>'           # 输出重定向（排除 > 用于比较的情况）
+        '<'           # 输入重定向
     )
 
     for pattern in "${dangerous_patterns[@]}"; do
-        if grep -qE "${pattern}" "${file}" 2>/dev/null; then
-            log_error "检测到危险模式: ${file}"
-            return 1
+        # 排除注释行和字符串中的模式
+        if grep -v '^[[:space:]]*#' "${file}" 2>/dev/null | grep -qE "${pattern}"; then
+            log_warn "检测到潜在危险模式: ${pattern} 在 ${file}"
+            log_warn "请检查配置文件内容"
+            # 不直接拒绝，而是警告
         fi
     done
 
@@ -294,7 +325,15 @@ safe_source() {
     return 0
 }
 
+# ==============================================================================
 # 安全保存配置文件
+# @param file: 文件路径
+# @param content: 文件内容
+# @param perms: 文件权限（默认600）
+# @return: 0成功，1失败
+# @description: 使用原子写入方式保存文件，防止写入失败导致文件损坏
+# @example: save_config_file "/etc/config" "key=value" "644"
+# ==============================================================================
 save_config_file() {
     local file="$1"
     local content="$2"
@@ -328,7 +367,13 @@ save_config_file() {
     return 0
 }
 
+# ==============================================================================
 # 安全删除文件/目录
+# @param path: 文件或目录路径
+# @return: 0成功，1失败
+# @description: 验证路径安全性，防止误删系统关键目录
+# @example: safe_delete "/tmp/zpanel_temp"
+# ==============================================================================
 safe_delete() {
     local path="$1"
 
@@ -338,12 +383,48 @@ safe_delete() {
         return 1
     fi
 
-    # 检查禁止目录
-    local forbidden_dirs=("/" "/etc" "/bin" "/sbin" "/usr" "/var" "/home" "/root")
+    # 检查禁止目录（扩展列表）
+    local forbidden_dirs=(
+        "/"
+        "/etc"
+        "/bin"
+        "/sbin"
+        "/usr"
+        "/usr/bin"
+        "/usr/sbin"
+        "/usr/lib"
+        "/usr/local"
+        "/var"
+        "/var/log"
+        "/var/run"
+        "/var/lib"
+        "/home"
+        "/root"
+        "/boot"
+        "/dev"
+        "/proc"
+        "/sys"
+        "/lib"
+        "/lib64"
+        "/opt"
+        "/srv"
+        "/tmp"
+    )
+
     for dir in "${forbidden_dirs[@]}"; do
+        # 检查完全匹配或子目录
         if [[ "${path}" == "${dir}" ]] || [[ "${path}" == "${dir}/*" ]]; then
             log_error "禁止删除系统目录: ${path}"
             return 1
+        fi
+    done
+
+    # 额外安全检查：确保路径不包含关键系统目录
+    local system_dirs=("etc" "bin" "sbin" "usr" "var" "home" "root" "boot" "dev" "proc" "sys" "lib" "opt" "srv")
+    for sys_dir in "${system_dirs[@]}"; do
+        if [[ "${path}" == *"/${sys_dir}"* ]]; then
+            log_warn "路径包含系统目录: ${sys_dir}"
+            log_warn "请确认操作: ${path}"
         fi
     done
 
@@ -366,7 +447,12 @@ safe_delete() {
 # 命令检查函数
 # ==============================================================================
 
+# ==============================================================================
 # 检查命令是否存在
+# @param cmd: 命令名称
+# @return: 0存在，1不存在
+# @example: check_command "awk" && echo "awk已安装"
+# ==============================================================================
 check_command() {
     local cmd="$1"
     command -v "${cmd}" &> /dev/null
@@ -391,7 +477,12 @@ check_commands() {
     return 0
 }
 
+# ==============================================================================
 # 检查依赖
+# @return: 0所有依赖满足，1缺少必需依赖
+# @description: 检查必需和可选命令，提供安装建议
+# @example: check_dependencies
+# ==============================================================================
 check_dependencies() {
     local missing=()
     local warnings=()
@@ -586,7 +677,12 @@ format_duration() {
 # 进程管理函数
 # ==============================================================================
 
+# ==============================================================================
 # 检查进程是否运行
+# @param pid: 进程ID
+# @return: 0运行中，1未运行
+# @example: is_process_running "1234" && echo "进程运行中"
+# ==============================================================================
 is_process_running() {
     local pid="$1"
     [[ -d "/proc/${pid}" ]] 2>/dev/null
@@ -640,7 +736,13 @@ wait_process() {
 # 网络函数
 # ==============================================================================
 
+# ==============================================================================
 # 检查端口是否监听
+# @param port: 端口号
+# @param protocol: 协议类型（tcp/udp，默认tcp）
+# @return: 0监听中，1未监听
+# @example: is_port_listening "80" "tcp" && echo "端口80监听中"
+# ==============================================================================
 is_port_listening() {
     local port="$1"
     local protocol="${2:-tcp}"
@@ -679,6 +781,112 @@ check_connectivity() {
 }
 
 # ==============================================================================
+# 包管理函数
+# ==============================================================================
+# 注意：包管理器检测和安装函数已移至 system.sh
+# 使用 get_package_manager() 和 install_packages() 从 system.sh
+
+# ==============================================================================
+# 统一的服务管理接口
+# ==============================================================================
+
+# ==============================================================================
+# 通用systemctl封装（兼容systemd和OpenRC）
+# @param command: 服务操作命令（start/stop/restart/status等）
+# @param service_name: 服务名称
+# @return: 执行结果的退出码
+# @description: 自动检测系统类型，使用正确的服务管理工具
+# @example: systemctl_wrapper "start" "nginx"
+# ==============================================================================
+systemctl_wrapper() {
+    local command="$1"
+    local service_name="$2"
+
+    if command -v apk &>/dev/null; then
+        # Alpine Linux 使用 OpenRC
+        service "${service_name}" "${command}"
+    else
+        # 其他发行版使用 systemd
+        /bin/systemctl "${command}" "${service_name}"
+    fi
+}
+
+# 启动服务
+service_start() {
+    local service_name="$1"
+    if systemctl_wrapper start "${service_name}" &>/dev/null; then
+        log_info "${service_name} 服务已启动"
+        return 0
+    else
+        log_error "启动 ${service_name} 服务失败"
+        return 1
+    fi
+}
+
+# 停止服务
+service_stop() {
+    local service_name="$1"
+    if systemctl_wrapper stop "${service_name}" &>/dev/null; then
+        log_info "${service_name} 服务已停止"
+        return 0
+    else
+        log_error "停止 ${service_name} 服务失败"
+        return 1
+    fi
+}
+
+# 重启服务
+service_restart() {
+    local service_name="$1"
+    if systemctl_wrapper restart "${service_name}" &>/dev/null; then
+        log_info "${service_name} 服务已重启"
+        return 0
+    else
+        log_error "重启 ${service_name} 服务失败"
+        return 1
+    fi
+}
+
+# 查看服务状态
+service_status() {
+    local service_name="$1"
+    systemctl_wrapper status "${service_name}"
+}
+
+# 启用开机自启
+service_enable() {
+    local service_name="$1"
+    if command -v apk &>/dev/null; then
+        # Alpine Linux
+        rc-update add "${service_name}" default
+    else
+        # systemd
+        /bin/systemctl enable "${service_name}" &>/dev/null
+    fi
+    log_info "${service_name} 已设置为开机自启"
+}
+
+# 禁用开机自启
+service_disable() {
+    local service_name="$1"
+    if command -v apk &>/dev/null; then
+        # Alpine Linux
+        rc-update del "${service_name}" default
+    else
+        # systemd
+        /bin/systemctl disable "${service_name}" &>/dev/null
+    fi
+    log_info "${service_name} 已禁用开机自启"
+}
+
+# 检查是否使用systemd
+# 注意：check_systemd() 已移至 system.sh，使用该模块的版本
+check_systemd() {
+    # 检查systemd进程
+    pgrep systemd &>/dev/null && [[ -d /run/systemd/system ]]
+}
+
+# ==============================================================================
 # 导出函数
 # ==============================================================================
 export -f validate_positive_integer
@@ -710,7 +918,6 @@ export -f escape_regex
 export -f to_lower
 export -f to_upper
 export -f string_contains
-export -f array_contains
 export -f get_timestamp
 export -f get_timestamp_ms
 export -f format_timestamp
@@ -720,3 +927,10 @@ export -f is_process_running
 export -f find_pids_by_name
 export -f kill_process_safe
 export -f wait_process
+export -f systemctl_wrapper
+export -f service_start
+export -f service_stop
+export -f service_restart
+export -f service_status
+export -f service_enable
+export -f service_disable

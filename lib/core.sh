@@ -170,27 +170,68 @@ declare -gA CONFIG_CENTER=(
 
 # ==============================================================================
 # 获取配置
+# @param key: 配置键 (必需)
+# @param default: 默认值 (可选)
+# @return: 配置值或默认值
 # ==============================================================================
 get_config() {
+    # 参数验证
+    if [[ ${#} -eq 0 ]]; then
+        log_error "get_config: 缺少必需参数 key"
+        return 1
+    fi
+
     local key="$1"
     local default="${2:-}"
+
+    # 验证key不为空
+    if [[ -z "${key}" ]]; then
+        log_error "get_config: 配置键不能为空"
+        return 1
+    fi
+
     echo "${CONFIG_CENTER[$key]:-$default}"
 }
 
 # ==============================================================================
 # 设置配置
+# @param key: 配置键 (必需)
+# @param value: 配置值 (必需)
+# @return: 0成功
 # ==============================================================================
 set_config() {
+    # 参数验证
+    if [[ ${#} -lt 2 ]]; then
+        log_error "set_config: 缺少必需参数 (key, value)"
+        return 1
+    fi
+
     local key="$1"
     local value="$2"
+
+    # 验证key不为空
+    if [[ -z "${key}" ]]; then
+        log_error "set_config: 配置键不能为空"
+        return 1
+    fi
+
     CONFIG_CENTER[$key]="${value}"
 }
 
 # ==============================================================================
 # 批量设置配置
+# @param config_ref: 配置数组引用 (必需)
+# @return: 0成功
 # ==============================================================================
 set_config_batch() {
+    # 参数验证
+    if [[ ${#} -eq 0 ]]; then
+        log_error "set_config_batch: 缺少必需参数 config_ref"
+        return 1
+    fi
+
     local -n config_ref="$1"
+
     for key in "${!config_ref[@]}"; do
         CONFIG_CENTER["${key}"]="${config_ref[$key]}"
     done
@@ -198,6 +239,7 @@ set_config_batch() {
 
 # ==============================================================================
 # 获取所有配置
+# @return: 所有配置的键值对
 # ==============================================================================
 get_all_config() {
     local output=""
@@ -209,12 +251,36 @@ get_all_config() {
 
 # ==============================================================================
 # 保存配置到文件
+# @param config_file: 配置文件路径 (必需)
+# @param section: 配置节名称 (可选，默认zpanel)
+# @return: 0成功，1失败
 # ==============================================================================
 save_config() {
+    # 参数验证
+    if [[ ${#} -eq 0 ]]; then
+        log_error "save_config: 缺少必需参数 config_file"
+        return 1
+    fi
+
     local config_file="$1"
     local section="${2:-zpanel}"
 
-    mkdir -p "$(dirname "${config_file}")" 2>/dev/null || return 1
+    # 验证配置文件路径
+    if ! validate_path "${config_file}"; then
+        log_error "无效的配置文件路径: ${config_file}"
+        return 1
+    fi
+
+    # 验证section不为空
+    if [[ -z "${section}" ]]; then
+        log_warn "配置节名称为空，使用默认值zpanel"
+        section="zpanel"
+    fi
+
+    mkdir -p "$(dirname "${config_file}")" 2>/dev/null || {
+        log_error "无法创建配置目录: $(dirname "${config_file}")"
+        return 1
+    }
 
     {
         echo "# Z-Panel Pro Configuration"
@@ -234,11 +300,23 @@ save_config() {
 
 # ==============================================================================
 # 从文件加载配置
+# @param config_file: 配置文件路径 (必需)
+# @return: 0成功，1失败
 # ==============================================================================
 load_config() {
+    # 参数验证
+    if [[ ${#} -eq 0 ]]; then
+        log_error "load_config: 缺少必需参数 config_file"
+        return 1
+    fi
+
     local config_file="$1"
 
-    [[ ! -f "${config_file}" ]] && return 1
+    # 验证配置文件存在
+    if [[ ! -f "${config_file}" ]]; then
+        log_warn "配置文件不存在: ${config_file}"
+        return 1
+    fi
 
     while IFS='=' read -r key value; do
         # 跳过注释和空行
@@ -259,20 +337,29 @@ load_config() {
 
 # ==============================================================================
 # 验证配置
+# @return: 错误数量
 # ==============================================================================
 validate_config() {
     local errors=0
 
     # 验证数值范围
-    local swappiness="${CONFIG_CENTER[swappiness]}"
-    if [[ ${swappiness} -lt 0 ]] || [[ ${swappiness} -gt 100 ]]; then
+    local swappiness="${CONFIG_CENTER[swappiness]:-60}"
+    if ! [[ "${swappiness}" =~ ^[0-9]+$ ]]; then
+        log_error "无效的swappiness值: ${swappiness} (必须是数字)"
+        ((errors++))
+    elif [[ ${swappiness} -lt 0 ]] || [[ ${swappiness} -gt 100 ]]; then
         log_error "无效的swappiness值: ${swappiness} (范围: 0-100)"
         ((errors++))
     fi
 
     # 验证路径
-    if [[ ! -d "$(dirname "${CONFIG_CENTER[swap_file_path]}")" ]]; then
-        log_warn "Swap文件目录不存在: $(dirname "${CONFIG_CENTER[swap_file_path]}")"
+    local swap_file_path="${CONFIG_CENTER[swap_file_path]}"
+    if [[ -n "${swap_file_path}" ]]; then
+        local swap_dir
+        swap_dir=$(dirname "${swap_file_path}")
+        if [[ ! -d "${swap_dir}" ]]; then
+            log_warn "Swap文件目录不存在: ${swap_dir}"
+        fi
     fi
 
     # 验证布尔值
@@ -280,7 +367,7 @@ validate_config() {
     for key in "${bool_keys[@]}"; do
         local value="${CONFIG_CENTER[$key]:-false}"
         if [[ "${value}" != "true" ]] && [[ "${value}" != "false" ]]; then
-            log_warn "无效的布尔值配置: ${key}=${value}"
+            log_warn "无效的布尔值配置: ${key}=${value} (应为true或false)"
         fi
     done
 
@@ -289,6 +376,7 @@ validate_config() {
 
 # ==============================================================================
 # 重置配置为默认值
+# @return: 0成功
 # ==============================================================================
 reset_config() {
     CONFIG_CENTER=(
@@ -311,6 +399,9 @@ reset_config() {
         [swap_usage_threshold]=50
     )
 
+    # 验证重置后的配置
+    validate_config
+
     log_info "配置已重置为默认值"
     return 0
 }
@@ -328,6 +419,7 @@ export_config_env() {
 
 # ==============================================================================
 # 初始化核心模块
+# @return: 0成功，1失败
 # ==============================================================================
 init_core() {
     # 创建目录结构
@@ -342,6 +434,12 @@ init_core() {
     )
 
     for dir in "${dirs[@]}"; do
+        # 验证目录路径不为空
+        if [[ -z "${dir}" ]]; then
+            log_error "目录路径为空"
+            return 1
+        fi
+
         mkdir -p "${dir}" 2>/dev/null || {
             log_error "无法创建目录: ${dir}"
             return 1

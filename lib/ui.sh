@@ -74,16 +74,43 @@ ui_draw_menu_item() {
 # 进度条绘制函数
 # ==============================================================================
 
+# ==============================================================================
 # 绘制进度条
-# @param current: 当前值
-# @param total: 总值
-# @param width: 进度条宽度（可选，默认46）
-# @param label: 标签文本（可选）
+# @param current: 当前值 (必需，>=0)
+# @param total: 总值 (必需，>0)
+# @param width: 进度条宽度 (可选，默认46，范围10-100)
+# @param label: 标签文本 (可选)
+# ==============================================================================
 ui_draw_progress_bar() {
+    # 参数验证
+    if [[ ${#} -lt 2 ]]; then
+        log_error "ui_draw_progress_bar: 缺少必需参数 (current, total)"
+        return 1
+    fi
+
     local current=$1
     local total=$2
     local width=${3:-46}
     local label="${4:-}"
+
+    # 验证current为非负数
+    if ! [[ "${current}" =~ ^[0-9]+$ ]]; then
+        log_error "无效的current值: ${current} (必须是非负整数)"
+        return 1
+    fi
+
+    # 验证total为正数
+    if ! validate_positive_integer "${total}"; then
+        log_error "无效的total值: ${total} (必须是正整数)"
+        return 1
+    fi
+
+    # 验证width范围 (10-100)
+    if [[ ${width} -lt 10 ]]; then
+        width=10
+    elif [[ ${width} -gt 100 ]]; then
+        width=100
+    fi
 
     [[ -n "${label}" ]] && echo -ne "${COLOR_WHITE}${label}${COLOR_NC} "
 
@@ -127,12 +154,33 @@ ui_draw_progress_bar() {
 # 压缩比图表绘制函数
 # ==============================================================================
 
+# ==============================================================================
 # 绘制压缩比图表
-# @param ratio: 压缩比
-# @param width: 图表宽度（可选，默认46）
+# @param ratio: 压缩比 (必需，>=0)
+# @param width: 图表宽度 (可选，默认46，范围10-100)
+# ==============================================================================
 ui_draw_compression_chart() {
+    # 参数验证
+    if [[ ${#} -eq 0 ]]; then
+        log_error "ui_draw_compression_chart: 缺少必需参数 ratio"
+        return 1
+    fi
+
     local ratio=$1
     local width=${2:-46}
+
+    # 验证ratio为非负数
+    if ! [[ "${ratio}" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+        log_error "无效的ratio值: ${ratio} (必须是非负数)"
+        return 1
+    fi
+
+    # 验证width范围 (10-100)
+    if [[ ${width} -lt 10 ]]; then
+        width=10
+    elif [[ ${width} -gt 100 ]]; then
+        width=100
+    fi
 
     local filled=0
     local bar_color="${COLOR_GREEN}"
@@ -202,14 +250,28 @@ ui_clear() {
     clear
 }
 
+# ==============================================================================
 # 输入框
-# @param prompt: 提示文本
-# @param default: 默认值（可选）
+# @param prompt: 提示文本 (必需)
+# @param default: 默认值 (可选)
 # @return: 用户输入
+# ==============================================================================
 ui_input() {
+    # 参数验证
+    if [[ ${#} -eq 0 ]]; then
+        log_error "ui_input: 缺少必需参数 prompt"
+        return 1
+    fi
+
     local prompt="$1"
     local default="${2:-}"
     local result
+
+    # 限制prompt长度 (最大200字符)
+    if [[ ${#prompt} -gt 200 ]]; then
+        log_warn "提示文本过长，已截断为200字符"
+        prompt="${prompt:0:200}"
+    fi
 
     echo -ne "${COLOR_WHITE}${prompt}${COLOR_NC}"
     read -r result
@@ -221,12 +283,26 @@ ui_input() {
     fi
 }
 
+# ==============================================================================
 # 密码输入框
-# @param prompt: 提示文本
+# @param prompt: 提示文本 (必需)
 # @return: 密码
+# ==============================================================================
 ui_password() {
+    # 参数验证
+    if [[ ${#} -eq 0 ]]; then
+        log_error "ui_password: 缺少必需参数 prompt"
+        return 1
+    fi
+
     local prompt="$1"
     local password
+
+    # 限制prompt长度 (最大200字符)
+    if [[ ${#prompt} -gt 200 ]]; then
+        log_warn "提示文本过长，已截断为200字符"
+        prompt="${prompt:0:200}"
+    fi
 
     echo -ne "${COLOR_WHITE}${prompt}${COLOR_NC}"
     read -s -r password
@@ -238,14 +314,34 @@ ui_password() {
 # 菜单函数
 # ==============================================================================
 
+# ==============================================================================
 # 单选菜单
-# @param title: 菜单标题
-# @param options: 选项列表
+# @param title: 菜单标题 (必需)
+# @param options: 选项列表 (必需，至少1个选项)
 # @return: 选中的选项编号（从1开始）
+# ==============================================================================
 ui_select_menu() {
+    # 参数验证
+    if [[ ${#} -lt 2 ]]; then
+        log_error "ui_select_menu: 缺少必需参数 (title, options)"
+        return 1
+    fi
+
     local title="$1"
     shift
     local options=("$@")
+
+    # 验证至少有一个选项
+    if [[ ${#options[@]} -eq 0 ]]; then
+        log_error "ui_select_menu: 选项列表不能为空"
+        return 1
+    fi
+
+    # 验证选项数量不超过50个
+    if [[ ${#options[@]} -gt 50 ]]; then
+        log_warn "选项数量过多 (${#options[@]})，已限制为50个"
+        options=("${options[@]:0:50}")
+    fi
 
     while true; do
         ui_clear
@@ -274,15 +370,35 @@ ui_select_menu() {
     done
 }
 
+# ==============================================================================
 # 多选菜单
-# @param title: 菜单标题
-# @param options: 选项列表
+# @param title: 菜单标题 (必需)
+# @param options: 选项列表 (必需，至少1个选项)
 # @return: 选中的选项编号（逗号分隔）
+# ==============================================================================
 ui_multi_select_menu() {
+    # 参数验证
+    if [[ ${#} -lt 2 ]]; then
+        log_error "ui_multi_select_menu: 缺少必需参数 (title, options)"
+        return 1
+    fi
+
     local title="$1"
     shift
     local options=("$@")
     local -A selected
+
+    # 验证至少有一个选项
+    if [[ ${#options[@]} -eq 0 ]]; then
+        log_error "ui_multi_select_menu: 选项列表不能为空"
+        return 1
+    fi
+
+    # 验证选项数量不超过50个
+    if [[ ${#options[@]} -gt 50 ]]; then
+        log_warn "选项数量过多 (${#options[@]})，已限制为50个"
+        options=("${options[@]:0:50}")
+    fi
 
     while true; do
         ui_clear

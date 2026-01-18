@@ -142,6 +142,28 @@ detect_best_algorithm() {
 get_zram_algorithm() {
     local algorithm="${1:-auto}"
 
+    # 参数验证：算法类型
+    if [[ -z "${algorithm}" ]]; then
+        handle_error "ZRAM_ALGO" "压缩算法不能为空"
+        echo "lzo"
+        return 1
+    fi
+
+    # 验证算法是否有效
+    local valid_algorithms=("auto" "lz4" "lzo" "zstd")
+    local is_valid=false
+    for valid_algo in "${valid_algorithms[@]}"; do
+        if [[ "${algorithm}" == "${valid_algo}" ]]; then
+            is_valid=true
+            break
+        fi
+    done
+
+    if [[ "${is_valid}" == "false" ]]; then
+        log_warn "无效的压缩算法: ${algorithm}，使用默认值: lzo"
+        algorithm="lzo"
+    fi
+
     if [[ "${algorithm}" == "auto" ]]; then
         algorithm=$(detect_best_algorithm)
     fi
@@ -158,6 +180,24 @@ get_zram_algorithm() {
 configure_zram_compression() {
     local zram_device="$1"
     local algorithm="$2"
+
+    # 参数验证：设备名
+    if [[ -z "${zram_device}" ]]; then
+        handle_error "ZRAM_COMPRESS" "ZRAM 设备名不能为空"
+        return 1
+    fi
+
+    # 验证设备是否存在
+    if [[ ! -e "/sys/block/${zram_device}" ]]; then
+        handle_error "ZRAM_COMPRESS" "ZRAM 设备不存在: ${zram_device}"
+        return 1
+    fi
+
+    # 参数验证：算法
+    if [[ -z "${algorithm}" ]]; then
+        handle_error "ZRAM_COMPRESS" "压缩算法不能为空"
+        return 1
+    fi
 
     if [[ -e "/sys/block/${zram_device}/comp_algorithm" ]]; then
         local supported
@@ -207,6 +247,55 @@ configure_zram_limits() {
     local zram_size="$2"
     local phys_limit="$3"
 
+    # 参数验证：设备名
+    if [[ -z "${zram_device}" ]]; then
+        handle_error "ZRAM_LIMIT" "ZRAM 设备名不能为空"
+        return 1
+    fi
+
+    # 验证设备是否存在
+    if [[ ! -e "/sys/block/${zram_device}" ]]; then
+        handle_error "ZRAM_LIMIT" "ZRAM 设备不存在: ${zram_device}"
+        return 1
+    fi
+
+    # 参数验证：ZRAM大小
+    if ! validate_positive_integer "${zram_size}"; then
+        handle_error "ZRAM_LIMIT" "无效的 ZRAM 大小: ${zram_size}"
+        return 1
+    fi
+
+    # 边界检查：最小64MB
+    if [[ ${zram_size} -lt 64 ]]; then
+        handle_error "ZRAM_LIMIT" "ZRAM 大小不能小于 64MB (当前: ${zram_size}MB)"
+        return 1
+    fi
+
+    # 边界检查：最大2倍物理内存
+    local max_zram=$((SYSTEM_INFO[total_memory_mb] * 2))
+    if [[ ${zram_size} -gt ${max_zram} ]]; then
+        handle_error "ZRAM_LIMIT" "ZRAM 大小超过最大限制 (最大: ${max_zram}MB, 当前: ${zram_size}MB)"
+        return 1
+    fi
+
+    # 参数验证：物理内存限制
+    if ! validate_positive_integer "${phys_limit}"; then
+        handle_error "ZRAM_LIMIT" "无效的物理内存限制: ${phys_limit}"
+        return 1
+    fi
+
+    # 边界检查：物理限制不能超过总内存
+    if [[ ${phys_limit} -gt ${SYSTEM_INFO[total_memory_mb]} ]]; then
+        handle_error "ZRAM_LIMIT" "物理内存限制不能超过总内存 (总内存: ${SYSTEM_INFO[total_memory_mb]}MB, 限制: ${phys_limit}MB)"
+        return 1
+    fi
+
+    # 边界检查：物理限制不能小于ZRAM大小
+    if [[ ${phys_limit} -lt ${zram_size} ]]; then
+        handle_error "ZRAM_LIMIT" "物理内存限制不能小于 ZRAM 大小 (ZRAM: ${zram_size}MB, 限制: ${phys_limit}MB)"
+        return 1
+    fi
+
     # 设置磁盘大小
     local zram_bytes=$((zram_size * 1024 * 1024)) || true
     if ! echo "${zram_bytes}" > "/sys/block/${zram_device}/disksize" 2>/dev/null; then
@@ -231,6 +320,18 @@ configure_zram_limits() {
 # ==============================================================================
 enable_zram_swap() {
     local zram_device="$1"
+
+    # 参数验证：设备名
+    if [[ -z "${zram_device}" ]]; then
+        handle_error "ZRAM_SWAP" "ZRAM 设备名不能为空"
+        return 1
+    fi
+
+    # 验证设备是否存在
+    if [[ ! -e "/dev/${zram_device}" ]]; then
+        handle_error "ZRAM_SWAP" "ZRAM 设备不存在: /dev/${zram_device}"
+        return 1
+    fi
 
     # 创建ZRAM交换空间
     if ! mkswap "/dev/${zram_device}" > /dev/null 2>&1; then
@@ -263,14 +364,56 @@ prepare_zram_params() {
     local algorithm="${1:-auto}"
     local mode="${2:-${STRATEGY_MODE}}"
 
+    # 参数验证：算法
+    if [[ -z "${algorithm}" ]]; then
+        handle_error "ZRAM_PARAMS" "压缩算法不能为空"
+        return 1
+    fi
+
+    # 参数验证：模式
+    if [[ -z "${mode}" ]]; then
+        handle_error "ZRAM_PARAMS" "策略模式不能为空"
+        return 1
+    fi
+
+    # 验证策略模式是否有效
     validate_strategy_mode "${mode}" || return 1
     algorithm=$(get_zram_algorithm "${algorithm}")
+
+    # 边界检查：系统信息必须有效
+    if [[ -z "${SYSTEM_INFO[total_memory_mb]:-}" ]]; then
+        handle_error "ZRAM_PARAMS" "系统信息未加载，无法计算 ZRAM 参数"
+        return 1
+    fi
 
     local zram_ratio phys_limit swap_size swappiness dirty_ratio min_free
     read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< "$(calculate_strategy "${mode}")"
 
+    # 边界检查：确保返回值有效
+    if [[ -z "${zram_ratio}" ]] || ! validate_positive_integer "${zram_ratio}"; then
+        handle_error "ZRAM_PARAMS" "策略计算返回无效的 ZRAM 比例"
+        return 1
+    fi
+
+    # 边界检查：ZRAM比例范围 (10-150)
+    if [[ ${zram_ratio} -lt 10 ]] || [[ ${zram_ratio} -gt 150 ]]; then
+        log_warn "ZRAM 比例超出合理范围 (10-150)，当前: ${zram_ratio}%"
+    fi
+
     local zram_size=$((SYSTEM_INFO[total_memory_mb] * zram_ratio / 100)) || true
-    [[ ${zram_size} -lt 512 ]] && zram_size=512
+
+    # 边界检查：最小512MB
+    if [[ ${zram_size} -lt 512 ]]; then
+        zram_size=512
+        log_warn "ZRAM 大小调整至最小值: 512MB"
+    fi
+
+    # 边界检查：最大2倍物理内存
+    local max_zram=$((SYSTEM_INFO[total_memory_mb] * 2))
+    if [[ ${zram_size} -gt ${max_zram} ]]; then
+        log_warn "ZRAM 大小超过最大限制，调整至: ${max_zram}MB"
+        zram_size=${max_zram}
+    fi
 
     if ! validate_positive_integer "${zram_size}" || ! validate_positive_integer "${phys_limit}"; then
         handle_error "ZRAM_PARAMS" "ZRAM 参数验证失败"
@@ -296,6 +439,36 @@ save_zram_config() {
     local zram_ratio="$3"
     local zram_size="$4"
     local phys_limit="$5"
+
+    # 参数验证：算法
+    if [[ -z "${algorithm}" ]]; then
+        log_error "压缩算法不能为空"
+        return 1
+    fi
+
+    # 参数验证：模式
+    if [[ -z "${mode}" ]]; then
+        log_error "策略模式不能为空"
+        return 1
+    fi
+
+    # 参数验证：ZRAM比例
+    if ! validate_positive_integer "${zram_ratio}"; then
+        log_error "无效的 ZRAM 比例: ${zram_ratio}"
+        return 1
+    fi
+
+    # 参数验证：ZRAM大小
+    if ! validate_positive_integer "${zram_size}"; then
+        log_error "无效的 ZRAM 大小: ${zram_size}"
+        return 1
+    fi
+
+    # 参数验证：物理限制
+    if ! validate_positive_integer "${phys_limit}"; then
+        log_error "无效的物理内存限制: ${phys_limit}"
+        return 1
+    fi
 
     local content
     cat <<EOF
@@ -474,6 +647,33 @@ configure_zram() {
     local algorithm="${1:-auto}"
     local mode="${2:-${STRATEGY_MODE}}"
 
+    # 参数验证：算法
+    if [[ -z "${algorithm}" ]]; then
+        handle_error "ZRAM_CONFIG" "压缩算法不能为空"
+        return 1
+    fi
+
+    # 参数验证：模式
+    if [[ -z "${mode}" ]]; then
+        handle_error "ZRAM_CONFIG" "策略模式不能为空"
+        return 1
+    fi
+
+    # 验证策略模式是否有效
+    local valid_modes=("adaptive" "performance" "balanced" "conservative" "custom")
+    local is_valid=false
+    for valid_mode in "${valid_modes[@]}"; do
+        if [[ "${mode}" == "${valid_mode}" ]]; then
+            is_valid=true
+            break
+        fi
+    done
+
+    if [[ "${is_valid}" == "false" ]]; then
+        handle_error "ZRAM_CONFIG" "无效的策略模式: ${mode}"
+        return 1
+    fi
+
     log_info "配置 ZRAM (模式: ${mode})..."
 
     # 准备参数
@@ -564,3 +764,21 @@ disable_zram() {
     ZRAM_ENABLED=false
     log_info "ZRAM 已禁用"
 }
+
+
+# ==============================================================================
+# 导出函数
+# ==============================================================================
+export -f get_available_zram_device
+export -f initialize_zram_device
+export -f detect_best_algorithm
+export -f get_zram_algorithm
+export -f configure_zram_compression
+export -f configure_zram_limits
+export -f enable_zram_swap
+export -f prepare_zram_params
+export -f save_zram_config
+export -f create_zram_service
+export -f start_zram_service
+export -f configure_zram
+export -f disable_zram

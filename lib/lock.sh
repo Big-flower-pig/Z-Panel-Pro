@@ -271,16 +271,38 @@ cleanup_stale_locks() {
 # @param timeout: 超时时间（秒）
 # ==============================================================================
 set_lock_timeout() {
-    LOCK_ACQUISITION_TIMEOUT="${1:-30}"
+    local timeout="${1:-30}"
+
+    # 验证范围 (1-3600秒)
+    if [[ ${timeout} -lt 1 ]]; then
+        log_warn "锁获取超时时间过小，已自动调整为1秒"
+        timeout=1
+    elif [[ ${timeout} -gt 3600 ]]; then
+        log_warn "锁获取超时时间过大，已自动调整为3600秒"
+        timeout=3600
+    fi
+
+    LOCK_ACQUISITION_TIMEOUT="${timeout}"
     log_debug "锁获取超时已设置为: ${LOCK_ACQUISITION_TIMEOUT}秒"
 }
 
 # ==============================================================================
 # 设置过期锁阈值
-# @param threshold: 过期时间（秒）
+# @param threshold: 过期时间秒 (范围60-86400)
 # ==============================================================================
 set_stale_lock_threshold() {
-    LOCK_STALE_THRESHOLD="${1:-3600}"
+    local threshold="${1:-3600}"
+
+    # 验证范围 (60-86400秒)
+    if [[ ${threshold} -lt 60 ]]; then
+        log_warn "过期锁阈值过小，已自动调整为60秒"
+        threshold=60
+    elif [[ ${threshold} -gt 86400 ]]; then
+        log_warn "过期锁阈值过大，已自动调整为86400秒"
+        threshold=86400
+    fi
+
+    LOCK_STALE_THRESHOLD="${threshold}"
     log_debug "过期锁阈值已设置为: ${LOCK_STALE_THRESHOLD}秒"
 }
 

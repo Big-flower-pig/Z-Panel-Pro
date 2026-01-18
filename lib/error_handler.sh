@@ -127,6 +127,15 @@ handle_error() {
     local action="${3:-continue}"
     local exit_code="${4:-1}"
 
+    # 参数验证
+    if [[ -z "${context}" ]]; then
+        context="UNKNOWN"
+    fi
+
+    if [[ -z "${message}" ]]; then
+        message="未知错误"
+    fi
+
     # 记录错误信息
     LAST_ERROR_CONTEXT="${context}"
     LAST_ERROR_MESSAGE="${message}"
@@ -135,14 +144,34 @@ handle_error() {
     # 增加错误计数
     ((ERROR_COUNT++)) || true
 
-    # 保存错误上下文
-    ERROR_CONTEXT["${context}"]="${message}"
+    # 保存错误上下文（包含时间戳）
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    ERROR_CONTEXT["${context}"]="${timestamp} | ${message}"
 
-    # 添加到上下文堆栈
-    ERROR_CONTEXT_STACK+=("${context}:${message}")
+    # 添加到上下文堆栈（包含更多上下文信息）
+    local stack_entry="${timestamp} | ${context} | ${message}"
+    ERROR_CONTEXT_STACK+=("${stack_entry}")
+
+    # 构建详细的错误信息
+    local error_detail="[${context}] ${message}"
+    error_detail+=" | 退出码: ${exit_code}"
+
+    # 添加系统状态信息
+    if [[ -n "${SYSTEM_INFO[total_memory_mb]:-}" ]]; then
+        error_detail+=" | 内存: ${SYSTEM_INFO[total_memory_mb]}MB"
+    fi
+
+    if [[ -n "${SYSTEM_INFO[cpu_cores]:-}" ]]; then
+        error_detail+=" | CPU核心: ${SYSTEM_INFO[cpu_cores]}"
+    fi
+
+    # 添加函数调用栈（如果可用）
+    if [[ ${#ERROR_CONTEXT_STACK[@]} -gt 1 ]]; then
+        error_detail+=" | 调用栈深度: ${#ERROR_CONTEXT_STACK[@]}"
+    fi
 
     # 记录错误日志
-    log_error "[${context}] ${message}"
+    log_error "${error_detail}"
 
     # 调用自定义错误处理器
     local handler="${ERROR_HANDLERS[${context}]}"
@@ -156,16 +185,16 @@ handle_error() {
             return 1
             ;;
         exit)
-            log_critical "程序终止 (退出码: ${exit_code})"
+            log_critical "程序终止 (退出码: ${exit_code}) | 总错误数: ${ERROR_COUNT}"
             cleanup_on_exit
             exit ${exit_code}
             ;;
         abort)
-            log_error "操作中止"
+            log_error "操作中止 | 上下文: ${context}"
             return 2
             ;;
         retry)
-            log_warn "重试操作"
+            log_warn "重试操作 | 错误: ${message}"
             return 3
             ;;
         warn_only)
@@ -176,7 +205,7 @@ handle_error() {
             return 1
             ;;
         *)
-            log_error "未知错误处理动作: ${action}"
+            log_error "未知错误处理动作: ${action} | 使用默认: continue"
             return 1
             ;;
     esac
@@ -213,9 +242,35 @@ execute_with_retry() {
     shift 3
     local command=("$@")
 
+    # 参数验证
+    if ! validate_positive_integer "${max_attempts}"; then
+        log_error "无效的最大重试次数: ${max_attempts}，使用默认值: 3"
+        max_attempts=3
+    fi
+
+    # 边界检查：最大重试次数
+    if [[ ${max_attempts} -gt 100 ]]; then
+        log_warn "最大重试次数过大 (${max_attempts})，调整为: 100"
+        max_attempts=100
+    fi
+
+    if ! validate_positive_integer "${delay}"; then
+        log_error "无效的延迟时间: ${delay}，使用默认值: 1"
+        delay=1
+    fi
+
+    # 边界检查：延迟时间
+    if [[ ${delay} -gt 3600 ]]; then
+        log_warn "延迟时间过大 (${delay}秒)，调整为: 3600秒"
+        delay=3600
+    fi
+
     local attempt=1
     local result
     local current_delay=${delay}
+    local command_str="${command[*]}"
+
+    log_debug "开始执行命令 (最大重试: ${max_attempts}, 初始延迟: ${delay}秒): ${command_str}"
 
     while [[ ${attempt} -le ${max_attempts} ]]; do
         if "${command[@]}"; then
@@ -224,7 +279,7 @@ execute_with_retry() {
         fi
 
         local exit_code=$?
-        log_warn "命令执行失败 (尝试 ${attempt}/${max_attempts}), 退出码: ${exit_code}"
+        log_warn "命令执行失败 (尝试 ${attempt}/${max_attempts}), 退出码: ${exit_code} | 命令: ${command_str}"
 
         if [[ ${attempt} -lt ${max_attempts} ]]; then
             log_debug "等待 ${current_delay} 秒后重试..."
@@ -232,14 +287,20 @@ execute_with_retry() {
 
             # 指数退避
             if [[ "${backoff}" == "true" ]]; then
-                current_delay=$((current_delay * 2))
+                local new_delay=$((current_delay * 2))
+                # 限制最大延迟为300秒（5分钟）
+                if [[ ${new_delay} -gt 300 ]]; then
+                    new_delay=300
+                fi
+                log_debug "指数退避: ${current_delay}秒 -> ${new_delay}秒"
+                current_delay=${new_delay}
             fi
         fi
 
         ((attempt++)) || true
     done
 
-    log_error "命令执行失败，已达到最大重试次数 ${max_attempts}"
+    log_error "命令执行失败，已达到最大重试次数 ${max_attempts} | 命令: ${command_str}"
     return 1
 }
 
@@ -250,11 +311,30 @@ execute_with_timeout() {
     local timeout="$1"
     shift
     local command=("$@")
+    local command_str="${command[*]}"
+
+    # 参数验证
+    if ! validate_positive_integer "${timeout}"; then
+        log_error "无效的超时时间: ${timeout}，使用默认值: 30"
+        timeout=30
+    fi
+
+    # 边界检查：超时时间
+    if [[ ${timeout} -gt 86400 ]]; then
+        log_warn "超时时间过大 (${timeout}秒)，调整为: 86400秒 (24小时)"
+        timeout=86400
+    fi
+
+    log_debug "执行命令 (超时: ${timeout}秒): ${command_str}"
 
     # 使用系统timeout命令
     if command -v timeout &>/dev/null; then
         timeout "${timeout}" "${command[@]}"
-        return $?
+        local exit_code=$?
+        if [[ ${exit_code} -eq 124 ]]; then
+            log_error "命令执行超时 (${timeout}秒): ${command_str}"
+        fi
+        return ${exit_code}
     else
         # 手动实现超时
         "${command[@]}" &
@@ -269,7 +349,7 @@ execute_with_timeout() {
         if kill -0 ${pid} 2>/dev/null; then
             kill ${pid} 2>/dev/null || true
             wait ${pid} 2>/dev/null || true
-            log_error "命令执行超时: ${command[*]}"
+            log_error "命令执行超时 (${timeout}秒): ${command_str}"
             return 124
         fi
 
@@ -341,8 +421,15 @@ assert_equals() {
     local actual="$2"
     local message="${3:-断言失败: 期望 '${expected}', 实际 '${actual}'}"
 
+    # 参数验证
+    if [[ -z "${expected}" ]] || [[ -z "${actual}" ]]; then
+        handle_error "ASSERTION" "断言参数不能为空 | 期望: '${expected}', 实际: '${actual}'" "warn_only"
+        return 1
+    fi
+
     if [[ "${expected}" != "${actual}" ]]; then
-        handle_error "ASSERTION" "${message}" "warn_only"
+        local detail="${message} | 类型: ${expected_type} | 长度: ${#expected} vs ${#actual}"
+        handle_error "ASSERTION" "${detail}" "warn_only"
         return 1
     fi
     return 0
@@ -398,13 +485,27 @@ assert_number_range() {
     local max="$3"
     local var_name="${4:-值}"
 
+    # 参数验证
+    if [[ -z "${value}" ]]; then
+        handle_error "ASSERTION" "${var_name} 不能为空" "warn_only"
+        return 1
+    fi
+
     if ! validate_number "${value}"; then
-        handle_error "ASSERTION" "${var_name} 不是有效数字: ${value}" "warn_only"
+        handle_error "ASSERTION" "${var_name} 不是有效数字: ${value} | 类型: $(typeof "${value}" 2>/dev/null || echo 'unknown')" "warn_only"
+        return 1
+    fi
+
+    # 边界检查：min和max
+    if [[ ${min} -gt ${max} ]]; then
+        handle_error "ASSERTION" "范围参数错误: min (${min}) > max (${max})" "warn_only"
         return 1
     fi
 
     if [[ ${value} -lt ${min} ]] || [[ ${value} -gt ${max} ]]; then
-        handle_error "ASSERTION" "${var_name} 超出范围 [${min}, ${max}]: ${value}" "warn_only"
+        local diff_min=$((value - min))
+        local diff_max=$((max - value))
+        handle_error "ASSERTION" "${var_name} 超出范围 [${min}, ${max}]: ${value} | 偏差: min+${diff_min}, max-${diff_max}" "warn_only"
         return 1
     fi
     return 0

@@ -28,25 +28,83 @@ declare -g PERFORMANCE_MONITOR_ENABLED=true
 # 性能追踪
 # ==============================================================================
 
+# ==============================================================================
 # 开始性能计时
+# @param timer_name: 计时器名称 (必需)
+# ==============================================================================
 start_timer() {
+    # 参数验证
+    if [[ ${#} -eq 0 ]]; then
+        log_error "start_timer: 缺少必需参数 timer_name"
+        return 1
+    fi
+
     local timer_name="$1"
-    FUNCTION_TIMINGS["${timer_name}_start"]=$(date +%s%N)
+
+    # 验证计时器名称不为空
+    if [[ -z "${timer_name}" ]]; then
+        log_error "start_timer: 计时器名称不能为空"
+        return 1
+    fi
+
+    # 限制计时器名称长度 (最大50字符)
+    if [[ ${#timer_name} -gt 50 ]]; then
+        log_warn "计时器名称过长，已截断为50字符"
+        timer_name="${timer_name:0:50}"
+    fi
+
+    # 使用兼容性更好的时间戳获取方式
+    if date +%s%N &>/dev/null; then
+        FUNCTION_TIMINGS["${timer_name}_start"]=$(date +%s%N)
+    else
+        # 回退到秒级精度
+        FUNCTION_TIMINGS["${timer_name}_start"]=$(($(date +%s) * 1000000000))
+    fi
 }
 
+# ==============================================================================
 # 结束性能计时
+# @param timer_name: 计时器名称 (必需)
+# ==============================================================================
 end_timer() {
+    # 参数验证
+    if [[ ${#} -eq 0 ]]; then
+        log_error "end_timer: 缺少必需参数 timer_name"
+        return 1
+    fi
+
     local timer_name="$1"
+
+    # 验证计时器名称不为空
+    if [[ -z "${timer_name}" ]]; then
+        log_error "end_timer: 计时器名称不能为空"
+        return 1
+    fi
 
     if [[ -n "${FUNCTION_TIMINGS[${timer_name}_start]:-}" ]]; then
         local start_time=${FUNCTION_TIMINGS[${timer_name}_start]}
-        local end_time=$(date +%s%N)
+        local end_time
+        if date +%s%N &>/dev/null; then
+            end_time=$(date +%s%N)
+        else
+            end_time=$(($(date +%s) * 1000000000))
+        fi
         local duration=$(( (end_time - start_time) / 1000000 ))
+
+        # 验证持续时间合理性 (负数或过大值)
+        if [[ ${duration} -lt 0 ]]; then
+            log_warn "检测到负的持续时间，已修正为0"
+            duration=0
+        elif [[ ${duration} -gt 86400000 ]]; then
+            log_warn "持续时间过大 (${duration}ms)，可能存在计时错误"
+        fi
 
         FUNCTION_TIMINGS["${timer_name}_duration"]=${duration}
         ((PERFORMANCE_METRICS[function_calls]++)) || true
 
         log_debug "性能: ${timer_name} 耗时 ${duration}ms"
+    else
+        log_warn "计时器 ${timer_name} 未启动，无法结束计时"
     fi
 }
 
@@ -75,13 +133,29 @@ track_network_operation() {
 # 性能报告
 # ==============================================================================
 
+# ==============================================================================
 # 获取性能报告
+# @return: JSON格式的性能报告
+# ==============================================================================
 get_performance_report() {
     local uptime=$(($(date +%s) - PERFORMANCE_START_TIME))
+
+    # 验证运行时间合理性
+    if [[ ${uptime} -lt 0 ]]; then
+        log_warn "检测到负的运行时间，已修正为0"
+        uptime=0
+    fi
+
     local function_calls=${PERFORMANCE_METRICS[function_calls]:-0}
     local system_calls=${PERFORMANCE_METRICS[system_calls]:-0}
     local disk_io=${PERFORMANCE_METRICS[disk_io_operations]:-0}
     local network_ops=${PERFORMANCE_METRICS[network_operations]:-0}
+
+    # 验证数值范围
+    [[ ${function_calls} -lt 0 ]] && function_calls=0
+    [[ ${system_calls} -lt 0 ]] && system_calls=0
+    [[ ${disk_io} -lt 0 ]] && disk_io=0
+    [[ ${network_ops} -lt 0 ]] && network_ops=0
 
     # 计算平均调用率
     local calls_per_second=0
@@ -98,6 +172,10 @@ get_performance_report() {
     cache_stats=$(get_cache_stats 2>/dev/null || echo '{"hits":0,"misses":0}')
     local cache_hits=$(echo "${cache_stats}" | grep -o '"hits": [0-9]*' | awk '{print $2}')
     local cache_misses=$(echo "${cache_stats}" | grep -o '"misses": [0-9]*' | awk '{print $2}')
+
+    # 验证缓存统计值
+    [[ -z "${cache_hits}" ]] && cache_hits=0
+    [[ -z "${cache_misses}" ]] && cache_misses=0
     PERFORMANCE_METRICS[cache_hits]=${cache_hits}
     PERFORMANCE_METRICS[cache_misses]=${cache_misses}
 

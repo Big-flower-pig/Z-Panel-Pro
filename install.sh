@@ -5,60 +5,109 @@
 # 用法: curl -fsSL https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main/install.sh | bash
 # ==============================================================================
 
-set -e
+set -euo pipefail
 
 # 颜色定义
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly NC='\033[0m'
 
+# ==============================================================================
 # 日志函数
-log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
-log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+# ==============================================================================
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
 
-# 检查root权限
-if [[ $EUID -ne 0 ]]; then
-    log_error "需要root权限，请使用: sudo bash $0"
-    exit 1
-fi
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
 
-log_info "开始安装 Z-Panel Pro..."
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
 
-# 安装目录
-INSTALL_DIR="/opt/Z-Panel-Pro"
-BIN_DIR="/usr/local/bin"
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
 
-# 清理旧安装
-if [[ -d "${INSTALL_DIR}" ]]; then
-    log_info "清理旧安装..."
-    rm -rf "${INSTALL_DIR}"
-fi
+# ==============================================================================
+# 检查运行环境
+# ==============================================================================
+check_environment() {
+    # 检查root权限
+    if [[ $EUID -ne 0 ]]; then
+        log_error "需要root权限，请使用: sudo bash $0"
+        exit 1
+    fi
 
-# 克隆仓库
-log_info "下载 Z-Panel Pro..."
-git clone https://github.com/Big-flower-pig/Z-Panel-Pro.git "${INSTALL_DIR}"
+    # 检查git命令
+    if ! command -v git &>/dev/null; then
+        log_error "未找到git命令，请先安装git"
+        exit 1
+    fi
 
-# 转换所有脚本文件的换行符
-log_info "转换文件格式..."
-find "${INSTALL_DIR}" -type f -name "*.sh" -exec sed -i 's/\r$//' {} \;
+    # 检查BIN_DIR是否可写
+    if [[ ! -w "/usr/local/bin" ]]; then
+        log_error "无法写入 /usr/local/bin，请检查权限"
+        exit 1
+    fi
+}
 
-# 设置执行权限
-log_info "设置执行权限..."
-chmod +x "${INSTALL_DIR}/Z-Panel.sh"
-find "${INSTALL_DIR}/lib" -type f -name "*.sh" -exec chmod +x {} \;
+# ==============================================================================
+# 主安装函数
+# ==============================================================================
+main() {
+    check_environment
 
-# 如果bin目录存在，设置执行权限
-if [[ -d "${INSTALL_DIR}/bin" ]]; then
-    find "${INSTALL_DIR}/bin" -type f -name "*.sh" -exec chmod +x {} \;
-fi
+    log_info "开始安装 Z-Panel Pro..."
 
-# 创建全局命令 z
-log_info "注册全局命令 z..."
-cat > "${BIN_DIR}/z" <<'EOF'
+    # 安装目录
+    readonly INSTALL_DIR="/opt/Z-Panel-Pro"
+    readonly BIN_DIR="/usr/local/bin"
+
+    # 清理旧安装
+    if [[ -d "${INSTALL_DIR}" ]]; then
+        log_info "清理旧安装..."
+        rm -rf "${INSTALL_DIR}"
+    fi
+
+    # 克隆仓库
+    log_info "下载 Z-Panel Pro..."
+    if ! git clone https://github.com/Big-flower-pig/Z-Panel-Pro.git "${INSTALL_DIR}" 2>/dev/null; then
+        log_error "下载失败，请检查网络连接"
+        exit 1
+    fi
+
+    # 验证下载
+    if [[ ! -f "${INSTALL_DIR}/Z-Panel.sh" ]]; then
+        log_error "下载的文件不完整"
+        exit 1
+    fi
+
+    # 转换所有脚本文件的换行符
+    log_info "转换文件格式..."
+    find "${INSTALL_DIR}" -type f -name "*.sh" -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
+
+    # 设置执行权限
+    log_info "设置执行权限..."
+    chmod +x "${INSTALL_DIR}/Z-Panel.sh" 2>/dev/null || {
+        log_error "设置执行权限失败"
+        exit 1
+    }
+
+    find "${INSTALL_DIR}/lib" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+
+    # 如果bin目录存在，设置执行权限
+    if [[ -d "${INSTALL_DIR}/bin" ]]; then
+        find "${INSTALL_DIR}/bin" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+    fi
+
+    # 创建全局命令 z
+    log_info "注册全局命令 z..."
+    cat > "${BIN_DIR}/z" <<'EOF'
 #!/bin/bash
 # Z-Panel Pro 全局命令
 
@@ -71,25 +120,32 @@ else
 fi
 EOF
 
-chmod +x "${BIN_DIR}/z"
+    chmod +x "${BIN_DIR}/z" 2>/dev/null || {
+        log_error "注册全局命令失败"
+        exit 1
+    }
 
-# 显示安装信息
-echo ""
-echo "=========================================="
-log_success "Z-Panel Pro 安装完成！"
-echo "=========================================="
-echo ""
-echo "使用方法:"
-echo "  z                    # 启动面板"
-echo "  z --optimize         # 一键智能优化"
-echo "  z -h                 # 查看帮助"
-echo "  z -m                 # 实时监控"
-echo "  z -s                 # 查看状态"
-echo "  z --performance      # 查看性能报告"
-echo "  z --audit            # 查看审计日志"
-echo "  z --adaptive         # 查看自适应策略"
-echo ""
-echo "安装位置: ${INSTALL_DIR}"
-echo "全局命令: z"
-echo ""
-echo "=========================================="
+    # 显示安装信息
+    echo ""
+    echo "=========================================="
+    log_success "Z-Panel Pro 安装完成！"
+    echo "=========================================="
+    echo ""
+    echo "使用方法:"
+    echo "  z                    # 启动面板"
+    echo "  z --optimize         # 一键智能优化"
+    echo "  z -h                 # 查看帮助"
+    echo "  z -m                 # 实时监控"
+    echo "  z -s                 # 查看状态"
+    echo "  z --performance      # 查看性能报告"
+    echo "  z --audit            # 查看审计日志"
+    echo "  z --adaptive         # 查看自适应策略"
+    echo ""
+    echo "安装位置: ${INSTALL_DIR}"
+    echo "全局命令: z"
+    echo ""
+    echo "=========================================="
+}
+
+# 执行主函数
+main "$@"

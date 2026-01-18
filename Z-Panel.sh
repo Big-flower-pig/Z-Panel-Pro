@@ -38,14 +38,32 @@ source "${LIB_DIR}/audit_log.sh"      # 审计日志
 # 服务管理函数
 # ==============================================================================
 
+# ==============================================================================
 # 检查服务是否已安装
+# @return: 0已安装，1未安装
+# ==============================================================================
 is_service_installed() {
     [[ -f "${SYSTEMD_SERVICE_FILE}" ]] && systemctl is-enabled --quiet "${SERVICE_NAME}" 2>/dev/null
 }
 
+# ==============================================================================
 # 启用开机自启
+# @return: 0成功，1失败
+# ==============================================================================
 enable_autostart() {
     log_info "配置开机自启..."
+
+    # 验证安装目录存在
+    if [[ ! -d "${INSTALL_DIR}" ]]; then
+        log_error "安装目录不存在: ${INSTALL_DIR}"
+        return 1
+    fi
+
+    # 验证LIB_DIR存在
+    if [[ ! -d "${LIB_DIR}" ]]; then
+        log_error "库目录不存在: ${LIB_DIR}"
+        return 1
+    fi
 
     # 创建启动脚本
     local autostart_script="${INSTALL_DIR}/autostart.sh"
@@ -111,8 +129,15 @@ WantedBy=multi-user.target
 EOF
 
     # 重载并启用systemd服务
-    systemctl daemon-reload > /dev/null 2>&1
-    systemctl enable "${SERVICE_NAME}" > /dev/null 2>&1
+    if ! systemctl daemon-reload > /dev/null 2>&1; then
+        log_error "systemd重载失败"
+        return 1
+    fi
+
+    if ! systemctl enable "${SERVICE_NAME}" > /dev/null 2>&1; then
+        log_error "启用服务失败"
+        return 1
+    fi
 
     log_info "开机自启已启用"
 }
@@ -135,21 +160,34 @@ disable_autostart() {
 # 系统初始化函数
 # ==============================================================================
 
+# ==============================================================================
 # 初始化日志系统
+# @return: 0成功，1失败
+# ==============================================================================
 init_logging_system() {
     # 创建日志目录
-    mkdir -p "${LOG_DIR}"
+    if ! mkdir -p "${LOG_DIR}" 2>/dev/null; then
+        log_error "无法创建日志目录: ${LOG_DIR}"
+        return 1
+    fi
 
     # 设置文件权限
-    ensure_file_permissions "${LOG_FILE}" 640
-    ensure_dir_permissions "${LOG_DIR}" 750
+    ensure_file_permissions "${LOG_FILE}" 640 2>/dev/null || true
+    ensure_dir_permissions "${LOG_DIR}" 750 2>/dev/null || true
 
     # 初始化日志
-    init_logging "${LOG_FILE}"
+    if ! init_logging "${LOG_FILE}" 2>/dev/null; then
+        log_error "初始化日志失败"
+        return 1
+    fi
+
     set_log_level "INFO"
 }
 
+# ==============================================================================
 # 初始化配置目录
+# @return: 0成功，1失败
+# ==============================================================================
 init_config_dirs() {
     local dirs=(
         "${CONF_DIR}"
@@ -160,10 +198,15 @@ init_config_dirs() {
 
     for dir in "${dirs[@]}"; do
         if [[ ! -d "${dir}" ]]; then
-            mkdir -p "${dir}"
-            ensure_dir_permissions "${dir}" 750
+            if ! mkdir -p "${dir}" 2>/dev/null; then
+                log_error "无法创建目录: ${dir}"
+                return 1
+            fi
         fi
+        ensure_dir_permissions "${dir}" 750 2>/dev/null || true
     done
+
+    return 0
 }
 
 # 检查运行环境
@@ -179,7 +222,7 @@ check_runtime_env() {
     detect_system
 
     # 检查内核版本
-    if ! check_kernel_version; then
+    if ! check_kernel_version "${MIN_KERNEL_VERSION}"; then
         handle_error "内核版本过低，需要${MIN_KERNEL_VERSION} 或更高版本" "exit" "check_runtime_env"
     fi
 
@@ -248,11 +291,29 @@ init_system() {
 # 一键优化功能 (世界顶级标准)
 # ==============================================================================
 
+# ==============================================================================
 # 智能策略选择器
+# @return: 策略名称 (conservative/balance/aggressive)
+# ==============================================================================
 auto_select_strategy() {
     local mem_total="${SYSTEM_INFO[total_memory_mb]}"
     local is_vm="${SYSTEM_INFO[is_virtual]}"
     local is_container="${SYSTEM_INFO[is_container]}"
+
+    # 验证内存信息
+    if [[ ! "${mem_total}" =~ ^[0-9]+$ ]]; then
+        log_warn "无效的内存信息，使用默认策略"
+        mem_total=2048
+    fi
+
+    # 验证内存范围 (64MB-1TB)
+    if [[ ${mem_total} -lt 64 ]]; then
+        log_warn "内存大小过小，已自动调整为64MB"
+        mem_total=64
+    elif [[ ${mem_total} -gt 1048576 ]]; then
+        log_warn "内存大小过大，已自动调整为1TB"
+        mem_total=1048576
+    fi
 
     # 容器环境使用保守策略
     if [[ "${is_container}" == "true" ]]; then
@@ -307,11 +368,44 @@ EOF
     echo "${snapshot_file}"
 }
 
+# ==============================================================================
 # 显示优化进度
+# @param step: 当前步骤 (>=1)
+# @param total: 总步骤数 (>0)
+# @param message: 进度消息
+# ==============================================================================
 show_optimization_progress() {
+    # 参数验证
+    if [[ ${#} -lt 3 ]]; then
+        log_error "show_optimization_progress: 缺少必需参数 (step, total, message)"
+        return 1
+    fi
+
     local step="$1"
     local total="$2"
     local message="$3"
+
+    # 验证step和total为正数
+    if ! validate_positive_integer "${step}" || ! validate_positive_integer "${total}"; then
+        log_error "无效的步骤参数"
+        return 1
+    fi
+
+    # 边界检查
+    if [[ ${step} -lt 1 ]]; then
+        step=1
+    fi
+    if [[ ${total} -lt 1 ]]; then
+        total=1
+    fi
+    if [[ ${step} -gt ${total} ]]; then
+        step=${total}
+    fi
+
+    # 限制message长度 (最大50字符)
+    if [[ ${#message} -gt 50 ]]; then
+        message="${message:0:50}"
+    fi
 
     local percent=$((step * 100 / total)) || true
     local filled=$((percent / 2)) || true

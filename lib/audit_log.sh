@@ -38,14 +38,30 @@ readonly AUDIT_EVENT_ERROR="error"
 # 审计日志初始化
 # ==============================================================================
 
+# ==============================================================================
 # 初始化审计日志
+# @return: 0成功，1失败
+# ==============================================================================
 init_audit_log() {
-    [[ "${AUDIT_ENABLED}" != "true" ]] && return 0
+    # 参数验证
+    if [[ "${AUDIT_ENABLED}" != "true" ]]; then
+        return 0
+    fi
 
     # 初始化审计日志路径
     if [[ -z "${AUDIT_LOG_DIR}" ]]; then
+        if [[ -z "${LOG_DIR}" ]]; then
+            log_error "LOG_DIR 未定义"
+            return 1
+        fi
         AUDIT_LOG_DIR="${LOG_DIR}/audit"
         AUDIT_LOG_FILE="${AUDIT_LOG_DIR}/audit.log"
+    fi
+
+    # 验证路径
+    if ! validate_path "${AUDIT_LOG_DIR}"; then
+        log_error "无效的审计日志目录路径: ${AUDIT_LOG_DIR}"
+        return 1
     fi
 
     # 创建审计日志目录
@@ -62,6 +78,15 @@ init_audit_log() {
         chmod 600 "${AUDIT_LOG_FILE}" 2>/dev/null || true
     fi
 
+    # 验证保留天数范围 (1-365)
+    if [[ ${AUDIT_LOG_RETENTION_DAYS} -lt 1 ]]; then
+        log_warn "审计日志保留天数过小，已自动调整为1天"
+        AUDIT_LOG_RETENTION_DAYS=1
+    elif [[ ${AUDIT_LOG_RETENTION_DAYS} -gt 365 ]]; then
+        log_warn "审计日志保留天数过大，已自动调整为365天"
+        AUDIT_LOG_RETENTION_DAYS=365
+    fi
+
     # 清理旧日志
     find "${AUDIT_LOG_DIR}" -name "audit_*.log" -mtime +${AUDIT_LOG_RETENTION_DAYS} -delete 2>/dev/null || true
 
@@ -73,13 +98,39 @@ init_audit_log() {
 # 审计日志记录
 # ==============================================================================
 
+# ==============================================================================
 # 记录审计事件
+# @param event_type: 事件类型 (必需)
+# @param details: 事件详情 (可选)
+# @return: 0成功
+# ==============================================================================
 audit_log() {
-    [[ "${AUDIT_ENABLED}" != "true" ]] && return 0
+    # 参数验证
+    if [[ ${#} -eq 0 ]]; then
+        log_error "audit_log: 缺少必需参数 event_type"
+        return 1
+    fi
 
     local event_type="$1"
     shift
     local details="$*"
+
+    # 检查审计日志是否启用
+    if [[ "${AUDIT_ENABLED}" != "true" ]]; then
+        return 0
+    fi
+
+    # 验证事件类型不为空
+    if [[ -z "${event_type}" ]]; then
+        log_error "audit_log: 事件类型不能为空"
+        return 1
+    fi
+
+    # 限制详情长度 (最大1000字符)
+    if [[ ${#details} -gt 1000 ]]; then
+        log_warn "审计详情过长，已截断为1000字符"
+        details="${details:0:1000}"
+    fi
 
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     local timestamp_iso=$(date -Iseconds)
@@ -91,6 +142,15 @@ audit_log() {
     if [[ -f "${AUDIT_LOG_FILE}" ]]; then
         local file_size_mb
         file_size_mb=$(du -m "${AUDIT_LOG_FILE}" 2>/dev/null | cut -f1 || echo "0")
+
+        # 验证最大文件大小 (10-1000MB)
+        if [[ ${AUDIT_LOG_MAX_SIZE_MB} -lt 10 ]]; then
+            log_warn "审计日志最大文件大小过小，已自动调整为10MB"
+            AUDIT_LOG_MAX_SIZE_MB=10
+        elif [[ ${AUDIT_LOG_MAX_SIZE_MB} -gt 1000 ]]; then
+            log_warn "审计日志最大文件大小过大，已自动调整为1000MB"
+            AUDIT_LOG_MAX_SIZE_MB=1000
+        fi
 
         if [[ ${file_size_mb} -ge ${AUDIT_LOG_MAX_SIZE_MB} ]]; then
             local archived_log="${AUDIT_LOG_FILE}.old.$(date +%Y%m%d_%H%M%S)"
@@ -228,17 +288,38 @@ audit_error() {
 # 审计日志查询
 # ==============================================================================
 
+# ==============================================================================
 # 查询审计日志
+# @param event_type: 事件类型过滤 (可选)
+# @param since: 起始时间 (可选，格式: YYYY-MM-DD)
+# @param limit: 返回结果数量限制 (可选，默认100，最大1000)
+# @return: 查询结果
+# ==============================================================================
 query_audit_log() {
     local event_type="${1:-}"
     local since="${2:-}"
     local limit="${3:-100}"
 
+    # 参数验证
+    if [[ ${limit} -lt 1 ]]; then
+        log_warn "查询限制过小，已自动调整为1"
+        limit=1
+    elif [[ ${limit} -gt 1000 ]]; then
+        log_warn "查询限制过大，已自动调整为1000"
+        limit=1000
+    fi
+
     local query_file="${AUDIT_LOG_FILE}"
+
+    # 检查日志文件是否存在
+    if [[ ! -f "${AUDIT_LOG_FILE}" ]]; then
+        log_warn "审计日志文件不存在: ${AUDIT_LOG_FILE}"
+        return 0
+    fi
 
     # 按事件类型过滤
     if [[ -n "${event_type}" ]]; then
-        query_file=$(grep "\[${event_type}\]" "${AUDIT_LOG_FILE}" || echo "")
+        query_file=$(grep "\[${event_type}\]" "${AUDIT_LOG_FILE}" 2>/dev/null || echo "")
     fi
 
     # 按时间过滤
@@ -306,25 +387,74 @@ EOF
 # 审计日志管理
 # ==============================================================================
 
+# ==============================================================================
 # 清理审计日志
+# @param days: 清理天数 (可选，默认为AUDIT_LOG_RETENTION_DAYS，范围1-365)
+# @return: 0成功，1失败
+# ==============================================================================
 cleanup_audit_logs() {
     local days="${1:-${AUDIT_LOG_RETENTION_DAYS}}"
+
+    # 参数验证
+    if [[ ! "${days}" =~ ^[0-9]+$ ]]; then
+        log_error "无效的天数参数: ${days}"
+        return 1
+    fi
+
+    if [[ ${days} -lt 1 ]]; then
+        log_warn "清理天数过小，已自动调整为1天"
+        days=1
+    elif [[ ${days} -gt 365 ]]; then
+        log_warn "清理天数过大，已自动调整为365天"
+        days=365
+    fi
+
+    # 检查目录是否存在
+    if [[ ! -d "${AUDIT_LOG_DIR}" ]]; then
+        log_warn "审计日志目录不存在: ${AUDIT_LOG_DIR}"
+        return 0
+    fi
 
     log_info "清理 ${days} 天前的审计日志..."
 
     local cleaned=0
     while IFS= read -r -d '' log_file; do
-        rm -f "${log_file}" 2>/dev/null && ((cleaned++)) || true
+        if rm -f "${log_file}" 2>/dev/null; then
+            ((cleaned++)) || true
+        fi
     done < <(find "${AUDIT_LOG_DIR}" -name "audit_*.log" -mtime +${days} -print0 2>/dev/null)
 
     log_info "已清理 ${cleaned} 个审计日志文件"
     return 0
 }
 
+# ==============================================================================
 # 导出审计日志
+# @param output_file: 输出文件路径 (必需)
+# @param format: 导出格式 (可选，默认text，支持json/csv/text)
+# @return: 0成功，1失败
+# ==============================================================================
 export_audit_log() {
+    # 参数验证
+    if [[ ${#} -eq 0 ]]; then
+        log_error "export_audit_log: 缺少必需参数 output_file"
+        return 1
+    fi
+
     local output_file="$1"
     local format="${2:-text}"
+
+    # 验证输出文件路径
+    if ! validate_path "${output_file}"; then
+        log_error "无效的输出文件路径: ${output_file}"
+        return 1
+    fi
+
+    # 验证格式参数
+    if [[ "${format}" != "json" ]] && [[ "${format}" != "csv" ]] && [[ "${format}" != "text" ]]; then
+        log_warn "不支持的导出格式: ${format}，使用默认格式text"
+        format="text"
+    fi
 
     if [[ ! -f "${AUDIT_LOG_FILE}" ]]; then
         log_error "审计日志文件不存在: ${AUDIT_LOG_FILE}"
@@ -348,6 +478,9 @@ export_audit_log() {
                 local timestamp=$(echo "${line}" | sed 's/\[//g' | cut -d']' -f1)
                 local event_type=$(echo "${line}" | sed 's/.*\[\([^]]*\)\].*/\1/' | cut -d']' -f1)
                 local details=$(echo "${line}" | sed 's/.*\]\s*//')
+
+                # 转义JSON特殊字符
+                details=$(echo "${details}" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g')
 
                 json_output+=$(cat <<EOF
 {
@@ -373,6 +506,7 @@ EOF
             ;;
     esac
 
+    chmod 640 "${output_file}" 2>/dev/null || true
     log_info "审计日志已导出: ${output_file} (格式: ${format})"
     return 0
 }

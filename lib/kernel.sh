@@ -14,7 +14,8 @@
 # ==============================================================================
 apply_io_fuse_protection() {
     local dirty_ratio="$1"
-    local dirty_background_ratio=$((dirty_ratio / 2))
+    # 使用 awk 确保精确计算
+    local dirty_background_ratio=$(awk "BEGIN {printf \"%.0f\", ${dirty_ratio} / 2}")
 
     log_info "应用 I/O 保护..."
 
@@ -177,7 +178,7 @@ vm.min_free_kbytes=${min_free}
 
 # 脏页参数 (I/O 保护)
 vm.dirty_ratio=${dirty_ratio}
-vm.dirty_background_ratio=$((dirty_ratio / 2)) || true
+vm.dirty_background_ratio=$(awk "BEGIN {printf \"%.0f\", ${dirty_ratio} / 2}")
 vm.dirty_expire_centisecs=3000
 vm.dirty_writeback_centisecs=500
 
@@ -242,14 +243,32 @@ EOF
 configure_virtual_memory() {
     local mode="${1:-${STRATEGY_MODE}}"
 
+    # 验证策略模式
+    if [[ "${mode}" != "conservative" ]] && [[ "${mode}" != "balance" ]] && [[ "${mode}" != "aggressive" ]]; then
+        log_error "无效的策略模式: ${mode}"
+        return 1
+    fi
+
     log_info "配置虚拟内存 (模式: ${mode})..."
 
+    # 计算策略参数
+    local strategy_params
+    strategy_params=$(calculate_strategy "${mode}")
+    if [[ ${?} -ne 0 ]] || [[ -z "${strategy_params}" ]]; then
+        log_error "计算策略失败"
+        return 1
+    fi
+
     local zram_ratio phys_limit swap_size swappiness dirty_ratio min_free
-    read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< "$(calculate_strategy "${mode}")"
+    read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< "${strategy_params}"
 
     # 计算动态swappiness
     local dynamic_swappiness
     dynamic_swappiness=$(calculate_dynamic_swappiness "${swappiness}" "${mode}")
+    if [[ ${?} -ne 0 ]] || [[ -z "${dynamic_swappiness}" ]]; then
+        log_warn "计算动态swappiness失败，使用原始值"
+        dynamic_swappiness="${swappiness}"
+    fi
 
     log_info "动态 swappiness: ${dynamic_swappiness}"
 
