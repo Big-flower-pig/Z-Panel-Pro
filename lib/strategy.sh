@@ -172,7 +172,7 @@ calculate_strategy() {
 
     # 小内存系统特殊处理（100MB-512MB）
     if [[ ${mem_total} -lt 512 ]]; then
-        log_warn "小内存系统 (${mem_total}MB)，调整策略参数"
+        log_warn "小内存系统 (${mem_total}MB)，调整策略参数" >&2
         # 确保 phys_limit >= zram_size 的 50%，避免验证失败
         local zram_size=$((mem_total * zram_ratio / 100)) || true
         if [[ ${phys_limit} -lt $((zram_size / 2)) ]]; then
@@ -190,7 +190,7 @@ calculate_strategy() {
     [[ ${swap_size} -lt 64 ]] && swap_size=64
 
     # 验证最终输出（确保没有空值或非数字）
-    log_debug "策略参数输出: zram_ratio=${zram_ratio}, phys_limit=${phys_limit}, swap_size=${swap_size}, swappiness=${swappiness}, dirty_ratio=${dirty_ratio}, min_free=${min_free}"
+    log_debug "策略参数输出: zram_ratio=${zram_ratio}, phys_limit=${phys_limit}, swap_size=${swap_size}, swappiness=${swappiness}, dirty_ratio=${dirty_ratio}, min_free=${min_free}" >&2
     echo "${zram_ratio} ${phys_limit} ${swap_size} ${swappiness} ${dirty_ratio} ${min_free}"
 }
 
