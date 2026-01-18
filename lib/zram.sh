@@ -474,7 +474,7 @@ configure_zram() {
     local algorithm="${1:-auto}"
     local mode="${2:-${STRATEGY_MODE}}"
 
-    log_info "???? ZRAM (??: ${mode})..."
+    log_info "配置 ZRAM (模式: ${mode})..."
 
     # 准备参数
     local params
@@ -490,7 +490,7 @@ configure_zram() {
         }
     fi
 
-    # ?????
+    # 初始化设备
     local zram_device
     zram_device=$(initialize_zram_device) || {
         handle_error "ZRAM_CONFIG" "初始化 ZRAM 设备失败"

@@ -55,6 +55,8 @@ declare -A STRATEGY_MENU_ITEMS=(
     ["3"]="激进模式"
     ["4"]="查看策略详情"
     ["0"]="返回主菜单"
+)
+
 # ==============================================================================
 # 性能报告菜单项
 # ==============================================================================
@@ -74,8 +76,6 @@ declare -A AUDIT_MENU_ITEMS=(
     ["3"]="导出审计日志"
     ["4"]="清理过期日志"
     ["0"]="返回主菜单"
-)
-
 )
 
 # ==============================================================================
@@ -237,19 +237,6 @@ handle_swap_management() {
                 if ui_confirm "确定要删除Swap文件吗？"; then
                     if disable_swap_file; then
                         log_info "Swap已成功删除"
-# ==============================================================================
-# 处理一键优化
-# ==============================================================================
-handle_one_click_optimize() {
-    log_info "正在执行一键智能优化..."
-    if one_click_optimize; then
-        log_info "一键优化完成！"
-    else
-        log_error "一键优化失败"
-    fi
-    ui_pause
-}
-
                     else
                         log_error "删除Swap失败"
                     fi
@@ -269,6 +256,19 @@ handle_one_click_optimize() {
                 ;;
         esac
     done
+}
+
+# ==============================================================================
+# 处理一键优化
+# ==============================================================================
+handle_one_click_optimize() {
+    log_info "正在执行一键智能优化..."
+    if one_click_optimize; then
+        log_info "一键优化完成！"
+    else
+        log_error "一键优化失败"
+    fi
+    ui_pause
 }
 
 # ==============================================================================
@@ -480,15 +480,18 @@ handle_advanced_settings() {
                 ui_pause
                 ;;
             "启用/禁用自动启动")
-                if is_service_installed; then
+                local service_file="${SYSTEMD_SERVICE_FILE:-/etc/systemd/system/zpanel.service}"
+                if [[ -f "${service_file}" ]] && systemctl is-enabled --quiet "zpanel" 2>/dev/null; then
                     if ui_confirm "确定要禁用自动启动吗？"; then
-                        disable_autostart
+                        systemctl disable "zpanel" > /dev/null 2>&1
+                        systemctl stop "zpanel" > /dev/null 2>&1
+                        rm -f "${service_file}"
+                        systemctl daemon-reload > /dev/null 2>&1
                         log_info "自动启动已禁用"
                     fi
                 else
                     if ui_confirm "确定要启用自动启动吗？"; then
-                        enable_autostart
-                        log_info "自动启动已启用"
+                        log_warn "请使用主脚本启用自动启动: ./Z-Panel.sh -e"
                     fi
                 fi
                 ui_pause

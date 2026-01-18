@@ -9,28 +9,9 @@
 # ==============================================================================
 
 # ==============================================================================
-# 系统信息存储
+# 系统信息存储（已在 core.sh 中声明）
 # ==============================================================================
-declare -gA SYSTEM_INFO=(
-    [distro]=""
-    [distro_id]=""
-    [version]=""
-    [version_id]=""
-    [codename]=""
-    [package_manager]=""
-    [package_manager_family]=""
-    [total_memory_mb]=0
-    [total_memory_kb]=0
-    [cpu_cores]=0
-    [cpu_threads]=0
-    [architecture]=""
-    [kernel_version]=""
-    [kernel_release]=""
-    [uptime]=0
-    [is_container]=false
-    [is_virtual]=false
-    [hypervisor]=""
-)
+# SYSTEM_INFO 关联数组在 core.sh 中已定义，此处仅使用
 
 # ==============================================================================
 # 系统检测主函数

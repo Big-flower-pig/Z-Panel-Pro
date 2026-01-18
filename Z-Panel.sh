@@ -53,15 +53,61 @@ is_service_installed() {
 enable_autostart() {
     log_info "配置开机自启..."
 
+    # 创建启动脚本
+    local autostart_script="${INSTALL_DIR}/autostart.sh"
+    cat > "${autostart_script}" << EOF
+#!/bin/bash
+# Z-Panel Pro 自动启动脚本
+set -euo pipefail
+
+# 加载核心模块
+source "${LIB_DIR}/core.sh"
+source "${LIB_DIR}/error_handler.sh"
+source "${LIB_DIR}/system.sh"
+source "${LIB_DIR}/data_collector.sh"
+source "${LIB_DIR}/strategy.sh"
+source "${LIB_DIR}/zram.sh"
+source "${LIB_DIR}/swap.sh"
+source "${LIB_DIR}/kernel.sh"
+
+# 初始化日志
+mkdir -p "${LOG_DIR}"
+init_logging "\${LOG_FILE}"
+set_log_level "INFO"
+
+# 检测系统
+detect_system
+
+# 加载配置
+load_strategy_config
+
+# 配置ZRAM、Swap和内核参数
+if configure_zram; then
+    log_info "ZRAM自动配置完成"
+fi
+
+if configure_physical_swap; then
+    log_info "Swap自动配置完成"
+fi
+
+if configure_virtual_memory; then
+    log_info "内核参数优化完成"
+fi
+
+log_info "Z-Panel Pro 自动启动完成"
+EOF
+
+    chmod 700 "${autostart_script}"
+
     # 创建systemd服务文件
-    cat > "${SYSTEMD_SERVICE_FILE}" << 'EOF'
+    cat > "${SYSTEMD_SERVICE_FILE}" << EOF
 [Unit]
 Description=Z-Panel Pro Memory Optimizer
 After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash -c 'source /opt/Z-Panel-Pro/lib/core.sh && source /opt/Z-Panel-Pro/lib/error_handler.sh && source /opt/Z-Panel-Pro/lib/system.sh && source /opt/Z-Panel-Pro/lib/data_collector.sh && source /opt/Z-Panel-Pro/lib/strategy.sh && source /opt/Z-Panel-Pro/lib/zram.sh && source /opt/Z-Panel-Pro/lib/swap.sh && source /opt/Z-Panel-Pro/lib/kernel.sh && configure_zram && configure_physical_swap && configure_virtual_memory'
+ExecStart=${autostart_script}
 RemainAfterExit=true
 StandardOutput=journal
 StandardError=journal
@@ -71,8 +117,8 @@ WantedBy=multi-user.target
 EOF
 
     # 重载并启用systemd服务
-    systemctl daemon-reload
-    systemctl enable "${SERVICE_NAME}"
+    systemctl daemon-reload > /dev/null 2>&1
+    systemctl enable "${SERVICE_NAME}" > /dev/null 2>&1
 
     log_info "开机自启已启用"
 }

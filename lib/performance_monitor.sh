@@ -85,7 +85,13 @@ get_performance_report() {
 
     # 计算平均调用率
     local calls_per_second=0
-    [[ ${uptime} -gt 0 ]] && calls_per_second=$(echo "scale=2; ${function_calls} / ${uptime}" | bc)
+    if [[ ${uptime} -gt 0 ]]; then
+        if check_command bc; then
+            calls_per_second=$(echo "scale=2; ${function_calls} / ${uptime}" | bc)
+        else
+            calls_per_second=$(awk "BEGIN {printf \"%.2f\", ${function_calls} / ${uptime}}")
+        fi
+    fi
 
     # 获取缓存统计
     local cache_stats
