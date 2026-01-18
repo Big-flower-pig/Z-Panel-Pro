@@ -116,12 +116,20 @@ calculate_strategy() {
 
     local zram_ratio phys_limit swap_size swappiness dirty_ratio min_free
 
+    # 先设置默认值，确保变量总是有有效值
+    zram_ratio=120
+    phys_limit=256
+    swap_size=512
+    swappiness=85
+    dirty_ratio=10
+    min_free=32768
+
     case "${mode}" in
         ${STRATEGY_CONSERVATIVE})
             # 保守策略：稳定性和可靠性优先，适合NAS
             zram_ratio=80
-            phys_limit=$((mem_total * 40 / 100)) || true
-            swap_size=$((mem_total * 100 / 100)) || true
+            phys_limit=$((mem_total * 40 / 100))
+            swap_size=$((mem_total * 100 / 100))
             swappiness=60
             dirty_ratio=5
             min_free=65536
@@ -129,8 +137,8 @@ calculate_strategy() {
         ${STRATEGY_BALANCE})
             # 平衡策略：性能和稳定性兼顾，适合大多数场景
             zram_ratio=120
-            phys_limit=$((mem_total * 50 / 100)) || true
-            swap_size=$((mem_total * 150 / 100)) || true
+            phys_limit=$((mem_total * 50 / 100))
+            swap_size=$((mem_total * 150 / 100))
             swappiness=85
             dirty_ratio=10
             min_free=32768
@@ -138,13 +146,29 @@ calculate_strategy() {
         ${STRATEGY_AGGRESSIVE})
             # 激进策略：性能优先，适合高性能要求场景
             zram_ratio=180
-            phys_limit=$((mem_total * 65 / 100)) || true
-            swap_size=$((mem_total * 200 / 100)) || true
+            phys_limit=$((mem_total * 65 / 100))
+            swap_size=$((mem_total * 200 / 100))
             swappiness=100
             dirty_ratio=15
             min_free=16384
             ;;
     esac
+
+    # 确保计算结果有效（防止计算失败导致的空值或非数字）
+    [[ ! "${zram_ratio}" =~ ^[0-9]+$ ]] && zram_ratio=120
+    [[ ! "${phys_limit}" =~ ^[0-9]+$ ]] && phys_limit=256
+    [[ ! "${swap_size}" =~ ^[0-9]+$ ]] && swap_size=512
+    [[ ! "${swappiness}" =~ ^[0-9]+$ ]] && swappiness=85
+    [[ ! "${dirty_ratio}" =~ ^[0-9]+$ ]] && dirty_ratio=10
+    [[ ! "${min_free}" =~ ^[0-9]+$ ]] && min_free=32768
+
+    # 先确保所有参数都有有效的默认值
+    [[ -z "${zram_ratio}" ]] || [[ ! "${zram_ratio}" =~ ^[0-9]+$ ]] && zram_ratio=120
+    [[ -z "${phys_limit}" ]] || [[ ! "${phys_limit}" =~ ^[0-9]+$ ]] && phys_limit=256
+    [[ -z "${swap_size}" ]] || [[ ! "${swap_size}" =~ ^[0-9]+$ ]] && swap_size=512
+    [[ -z "${swappiness}" ]] || [[ ! "${swappiness}" =~ ^[0-9]+$ ]] && swappiness=85
+    [[ -z "${dirty_ratio}" ]] || [[ ! "${dirty_ratio}" =~ ^[0-9]+$ ]] && dirty_ratio=10
+    [[ -z "${min_free}" ]] || [[ ! "${min_free}" =~ ^[0-9]+$ ]] && min_free=32768
 
     # 小内存系统特殊处理（100MB-512MB）
     if [[ ${mem_total} -lt 512 ]]; then
@@ -159,20 +183,14 @@ calculate_strategy() {
         [[ ${swap_size} -lt 64 ]] && swap_size=64
     fi
 
-    # 边界检查（确保所有参数都是有效数值）
-    [[ -z "${zram_ratio}" ]] || [[ ! "${zram_ratio}" =~ ^[0-9]+$ ]] && zram_ratio=120
-    [[ -z "${phys_limit}" ]] || [[ ! "${phys_limit}" =~ ^[0-9]+$ ]] && phys_limit=256
-    [[ -z "${swap_size}" ]] || [[ ! "${swap_size}" =~ ^[0-9]+$ ]] && swap_size=512
-    [[ -z "${swappiness}" ]] || [[ ! "${swappiness}" =~ ^[0-9]+$ ]] && swappiness=85
-    [[ -z "${dirty_ratio}" ]] || [[ ! "${dirty_ratio}" =~ ^[0-9]+$ ]] && dirty_ratio=10
-    [[ -z "${min_free}" ]] || [[ ! "${min_free}" =~ ^[0-9]+$ ]] && min_free=32768
-
     # 范围检查
     [[ ${zram_ratio} -lt 50 ]] && zram_ratio=50
     [[ ${zram_ratio} -gt 200 ]] && zram_ratio=200
     [[ ${phys_limit} -lt 64 ]] && phys_limit=64
     [[ ${swap_size} -lt 64 ]] && swap_size=64
 
+    # 验证最终输出（确保没有空值或非数字）
+    log_debug "策略参数输出: zram_ratio=${zram_ratio}, phys_limit=${phys_limit}, swap_size=${swap_size}, swappiness=${swappiness}, dirty_ratio=${dirty_ratio}, min_free=${min_free}"
     echo "${zram_ratio} ${phys_limit} ${swap_size} ${swappiness} ${dirty_ratio} ${min_free}"
 }
 
