@@ -11,9 +11,9 @@
 # ==============================================================================
 # 策略常量
 # ==============================================================================
-declare -gr STRATEGY_CONSERVATIVE="conservative"
-declare -gr STRATEGY_BALANCE="balance"
-declare -gr STRATEGY_AGGRESSIVE="aggressive"
+readonly STRATEGY_CONSERVATIVE="conservative"
+readonly STRATEGY_BALANCE="balance"
+readonly STRATEGY_AGGRESSIVE="aggressive"
 
 # ==============================================================================
 # 策略配置加载

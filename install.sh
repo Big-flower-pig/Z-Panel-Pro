@@ -50,7 +50,11 @@ find "${INSTALL_DIR}" -type f -name "*.sh" -exec sed -i 's/\r$//' {} \;
 log_info "设置执行权限..."
 chmod +x "${INSTALL_DIR}/Z-Panel.sh"
 find "${INSTALL_DIR}/lib" -type f -name "*.sh" -exec chmod +x {} \;
-find "${INSTALL_DIR}/bin" -type f -name "*.sh" -exec chmod +x {} \;
+
+# 如果bin目录存在，设置执行权限
+if [[ -d "${INSTALL_DIR}/bin" ]]; then
+    find "${INSTALL_DIR}/bin" -type f -name "*.sh" -exec chmod +x {} \;
+fi
 
 # 创建全局命令 z
 log_info "注册全局命令 z..."
