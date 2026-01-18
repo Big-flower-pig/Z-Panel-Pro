@@ -14,6 +14,9 @@ readonly YELLOW='\033[1;33m'
 readonly BLUE='\033[0;34m'
 readonly NC='\033[0m'
 
+# GitHub 仓库信息
+readonly REPO_URL="https://raw.githubusercontent.com/Big-flower-pig/Z-Panel-Pro/refs/heads/main"
+
 # ==============================================================================
 # 日志函数
 # ==============================================================================
@@ -34,6 +37,31 @@ log_error() {
 }
 
 # ==============================================================================
+# 下载文件函数
+# ==============================================================================
+download_file() {
+    local url="$1"
+    local dest="$2"
+
+    # 尝试使用 curl
+    if command -v curl &>/dev/null; then
+        if ! curl -fsSL "${url}" -o "${dest}" 2>/dev/null; then
+            return 1
+        fi
+    # 尝试使用 wget
+    elif command -v wget &>/dev/null; then
+        if ! wget -q "${url}" -O "${dest}" 2>/dev/null; then
+            return 1
+        fi
+    else
+        log_error "需要 curl 或 wget 来下载文件"
+        return 1
+    fi
+
+    return 0
+}
+
+# ==============================================================================
 # 检查运行环境
 # ==============================================================================
 check_environment() {
@@ -43,9 +71,10 @@ check_environment() {
         exit 1
     fi
 
-    # 检查git命令
-    if ! command -v git &>/dev/null; then
-        log_error "未找到git命令，请先安装git"
+    # 检查是否有 curl 或 wget
+    if ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
+        log_error "需要 curl 或 wget 来下载文件"
+        log_error "请安装其中一个: apt install curl 或 apt install wget"
         exit 1
     fi
 
@@ -74,14 +103,47 @@ main() {
         rm -rf "${INSTALL_DIR}"
     fi
 
-    # 克隆仓库
-    log_info "下载 Z-Panel Pro..."
-    if ! git clone https://github.com/Big-flower-pig/Z-Panel-Pro.git "${INSTALL_DIR}" 2>/dev/null; then
-        log_error "下载失败，请检查网络连接"
+    # 创建目录结构
+    log_info "创建目录结构..."
+    mkdir -p "${INSTALL_DIR}"
+    mkdir -p "${INSTALL_DIR}/lib"
+    mkdir -p "${INSTALL_DIR}/etc/zpanel"
+
+    # 下载主程序
+    log_info "下载主程序..."
+    if ! download_file "${REPO_URL}/Z-Panel.sh" "${INSTALL_DIR}/Z-Panel.sh"; then
+        log_error "下载 Z-Panel.sh 失败，请检查网络连接"
         exit 1
     fi
 
-    # 验证下载
+    # 下载库文件列表
+    local lib_files=(
+        "core.sh"
+        "error_handler.sh"
+        "utils.sh"
+        "lock.sh"
+        "system.sh"
+        "data_collector.sh"
+        "ui.sh"
+        "strategy.sh"
+        "zram.sh"
+        "kernel.sh"
+        "swap.sh"
+        "monitor.sh"
+        "menu.sh"
+        "performance_monitor.sh"
+        "audit_log.sh"
+    )
+
+    # 下载所有库文件
+    log_info "下载库文件..."
+    for lib_file in "${lib_files[@]}"; do
+        if ! download_file "${REPO_URL}/lib/${lib_file}" "${INSTALL_DIR}/lib/${lib_file}"; then
+            log_warning "下载 ${lib_file} 失败，跳过"
+        fi
+    done
+
+    # 验证主程序
     if [[ ! -f "${INSTALL_DIR}/Z-Panel.sh" ]]; then
         log_error "下载的文件不完整"
         exit 1
