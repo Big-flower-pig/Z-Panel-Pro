@@ -207,7 +207,7 @@ configure_zram_compression() {
         local supported
         supported=$(cat "/sys/block/${zram_device}/comp_algorithm" 2>/dev/null)
 
-        if echo "${supported}" | grep -q "${algorithm}"; then
+        if echo "${supported}" | grep -qF "${algorithm}"; then
             if echo "${algorithm}" > "/sys/block/${zram_device}/comp_algorithm" 2>/dev/null; then
                 log_info "压缩算法: ${algorithm}"
             else

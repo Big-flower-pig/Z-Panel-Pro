@@ -441,6 +441,26 @@ one_click_optimize() {
     show_optimization_progress 1 6 "检测系统环境..."
     sleep 0.3
 
+    # 确保系统信息已正确加载
+    detect_system 2>/dev/null || {
+        log_warn "系统检测失败，使用默认值"
+        SYSTEM_INFO[total_memory_mb]=1024
+        SYSTEM_INFO[cpu_cores]=2
+    }
+
+    # 验证系统信息
+    if [[ -z "${SYSTEM_INFO[total_memory_mb]:-}" ]] || [[ ! "${SYSTEM_INFO[total_memory_mb]}" =~ ^[0-9]+$ ]]; then
+        log_warn "内存信息无效，使用默认值 1024MB"
+        SYSTEM_INFO[total_memory_mb]=1024
+    fi
+
+    if [[ -z "${SYSTEM_INFO[cpu_cores]:-}" ]] || [[ ! "${SYSTEM_INFO[cpu_cores]}" =~ ^[0-9]+$ ]]; then
+        log_warn "CPU核心数无效，使用默认值 2"
+        SYSTEM_INFO[cpu_cores]=2
+    fi
+
+    log_info "系统信息: 内存 ${SYSTEM_INFO[total_memory_mb]}MB, CPU核心 ${SYSTEM_INFO[cpu_cores]}"
+
     local optimal_strategy
     optimal_strategy=$(auto_select_strategy)
     log_info "推荐策略: ${optimal_strategy}"
