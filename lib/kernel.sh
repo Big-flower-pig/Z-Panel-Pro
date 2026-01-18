@@ -146,7 +146,7 @@ save_kernel_config() {
     local min_free="$3"
 
     local content
-    cat <<EOF
+    content=$(cat <<EOF
 # ============================================================================
 # Z-Panel Pro 内核参数配置
 # ============================================================================
@@ -189,6 +189,7 @@ vm.page-cluster=0
 fs.file-max=2097152
 fs.inotify.max_user_watches=524288
 EOF
+)
 
     if save_config_file "${KERNEL_CONFIG_FILE}" "${content}"; then
         log_info "内核配置已保存"

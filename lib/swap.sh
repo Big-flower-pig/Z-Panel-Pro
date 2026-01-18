@@ -205,17 +205,8 @@ configure_physical_swap() {
         return 1
     fi
 
-    # 验证策略模式是否有效
-    local valid_modes=("adaptive" "performance" "balanced" "conservative" "custom")
-    local is_valid=false
-    for valid_mode in "${valid_modes[@]}"; do
-        if [[ "${mode}" == "${valid_mode}" ]]; then
-            is_valid=true
-            break
-        fi
-    done
-
-    if [[ "${is_valid}" == "false" ]]; then
+    # 验证策略模式是否有效（使用统一的验证函数）
+    if ! validate_strategy_mode "${mode}"; then
         handle_error "SWAP_CONFIG" "无效的策略模式: ${mode}"
         return 1
     fi

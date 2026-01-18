@@ -89,6 +89,7 @@ initialize_zram_device() {
     fi
 
     log_info "ZRAM 设备已初始化: ${zram_device}"
+    # 输出设备名（重定向日志到stderr以避免干扰）
     echo "${zram_device}"
     return 0
 }
@@ -681,9 +682,9 @@ configure_zram() {
         }
     fi
 
-    # 初始化设备
+    # 初始化设备（重定向stderr以避免捕获日志）
     local zram_device
-    zram_device=$(initialize_zram_device) || {
+    zram_device=$(initialize_zram_device 2>/dev/null) || {
         handle_error "ZRAM_CONFIG" "初始化 ZRAM 设备失败"
         return 1
     }
