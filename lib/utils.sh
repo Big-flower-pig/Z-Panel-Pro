@@ -1,9 +1,9 @@
 #!/bin/bash
 # ==============================================================================
-# Z-Panel Pro V8.0 - 工具函数库
+# Z-Panel Pro V9.0 - 工具函数库
 # ==============================================================================
 # @description    通用工具函数与辅助功能集合
-# @version       8.0.0-Enterprise
+# @version       9.0.0-Lightweight
 # @author        Z-Panel Team
 # @license       MIT License
 # ==============================================================================
@@ -687,8 +687,6 @@ export -f validate_float
 export -f validate_filename
 export -f validate_path
 export -f validate_pid
-export -f validate_port
-export -f validate_ip
 export -f convert_size_to_mb
 export -f convert_mb_to_human
 export -f convert_bytes_to_human
@@ -713,9 +711,6 @@ export -f to_lower
 export -f to_upper
 export -f string_contains
 export -f array_contains
-export -f array_unique
-export -f array_sort
-export -f array_reverse
 export -f get_timestamp
 export -f get_timestamp_ms
 export -f format_timestamp
@@ -725,6 +720,3 @@ export -f is_process_running
 export -f find_pids_by_name
 export -f kill_process_safe
 export -f wait_process
-export -f is_port_listening
-export -f get_local_ip
-export -f check_connectivity

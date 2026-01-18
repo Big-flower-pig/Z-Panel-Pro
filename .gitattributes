@@ -11,11 +11,3 @@
 # Documentation files
 *.md text eol=lf
 *.txt text eol=lf
-
-# Makefiles
-Makefile text eol=lf
-*.mk text eol=lf
-
-# Docker files
-Dockerfile text eol=lf
-*.dockerfile text eol=lf

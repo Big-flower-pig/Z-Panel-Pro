@@ -1,9 +1,9 @@
 #!/bin/bash
 # ==============================================================================
-# Z-Panel Pro V8.0 - 核心配置模块
+# Z-Panel Pro V9.0 - 核心配置模块
 # ==============================================================================
 # @description    全局配置、常量定义和配置中心
-# @version       8.0.0-Enterprise
+# @version       9.0.0-Lightweight
 # @author        Z-Panel Team
 # @license       MIT License
 # ==============================================================================
@@ -11,14 +11,14 @@
 # ==============================================================================
 # 版本信息
 # ==============================================================================
-readonly VERSION="8.0.0-Enterprise"
-readonly BUILD_DATE="2026-01-17"
-readonly CODENAME="Intelligent"
+readonly VERSION="9.0.0-Lightweight"
+readonly BUILD_DATE="2026-01-18"
+readonly CODENAME="Simple"
 
 # ==============================================================================
 # 目录结构
 # ==============================================================================
-readonly INSTALL_DIR="/opt/z-panel"
+readonly INSTALL_DIR="/opt/Z-Panel-Pro"
 readonly CONF_DIR="${INSTALL_DIR}/conf"
 readonly LOG_DIR="${INSTALL_DIR}/logs"
 readonly BACKUP_DIR="${INSTALL_DIR}/backup"
@@ -40,26 +40,11 @@ readonly STRATEGY_CONFIG_FILE="${CONF_DIR}/strategy.conf"
 readonly LOG_CONFIG_FILE="${CONF_DIR}/log.conf"
 readonly SWAP_CONFIG_FILE="${CONF_DIR}/swap.conf"
 
-# V8.0 新增配置文件
-readonly DECISION_ENGINE_CONFIG="${CONF_DIR}/decision_engine.conf"
-readonly STREAM_PROCESSOR_CONFIG="${CONF_DIR}/stream_processor.conf"
-readonly CACHE_CONFIG="${CONF_DIR}/cache.conf"
-readonly FEEDBACK_CONFIG="${CONF_DIR}/feedback.conf"
-readonly ADAPTIVE_TUNER_CONFIG="${CONF_DIR}/adaptive_tuner.conf"
-
-# 轻量级模式配置文件
-readonly LIGHTWEIGHT_CONFIG="${CONF_DIR}/lightweight.conf"
-
 # ==============================================================================
 # 锁文件
 # ==============================================================================
 readonly LOCK_FILE="/tmp/z-panel.lock"
 readonly LOCK_FD=200
-
-# V8.0 新增锁文件
-readonly DECISION_ENGINE_LOCK="${RUN_DIR}/decision_engine.lock"
-readonly STREAM_PROCESSOR_LOCK="${RUN_DIR}/stream_processor.lock"
-readonly ADAPTIVE_TUNER_LOCK="${RUN_DIR}/adaptive_tuner.lock"
 
 # ==============================================================================
 # 颜色定义
@@ -87,12 +72,6 @@ readonly PROGRESS_THRESHOLD_CRITICAL=90
 readonly PROGRESS_THRESHOLD_HIGH=70
 readonly PROGRESS_THRESHOLD_MEDIUM=50
 
-# V8.0 新增阈值
-readonly MEMORY_PRESSURE_CRITICAL=90
-readonly MEMORY_PRESSURE_HIGH=70
-readonly MEMORY_PRESSURE_MEDIUM=50
-readonly MEMORY_PRESSURE_LOW=30
-
 # ==============================================================================
 # 压缩比率标准
 # ==============================================================================
@@ -106,6 +85,12 @@ readonly COMPRESSION_RATIO_FAIR=1.5
 readonly SWAP_FILE_PATH="/var/lib/z-panel/swapfile"
 readonly ZRAM_PRIORITY=100
 readonly PHYSICAL_SWAP_PRIORITY=50
+
+# ==============================================================================
+# 系统服务
+# ==============================================================================
+readonly SERVICE_NAME="zpanel"
+readonly SYSTEMD_SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
 # ==============================================================================
 # 系统信息缓存
@@ -130,24 +115,22 @@ declare -g STRATEGY_MODE="balance"
 declare -g ZRAM_ENABLED=false
 declare -g SWAP_ENABLED=false
 
-# V8.0 新增状态
-declare -g DECISION_ENGINE_RUNNING=false
-declare -g STREAM_PROCESSOR_RUNNING=false
-declare -g ADAPTIVE_TUNER_RUNNING=false
+# ==============================================================================
+# 策略常量
+# ==============================================================================
+readonly STRATEGY_CONSERVATIVE="conservative"
+readonly STRATEGY_BALANCE="balance"
+readonly STRATEGY_AGGRESSIVE="aggressive"
 
-# 轻量级模式状态
-declare -g ZPANEL_MODE="${ZPANEL_MODE:-standard}"  # lightweight | standard | enterprise
+# ==============================================================================
+# 最小内核版本
+# ==============================================================================
+readonly MIN_KERNEL_VERSION="5.4"
 
 # ==============================================================================
 # 配置中心 - 统一配置管理
 # ==============================================================================
 declare -gA CONFIG_CENTER=(
-    # 缓存配置
-    [cache_ttl]=3
-    [cache_enabled]=true
-    [cache_max_size]=1000
-    [refresh_interval]=1
-
     # 日志配置
     [log_level]=1
     [log_max_size_mb]=50
@@ -170,29 +153,13 @@ declare -gA CONFIG_CENTER=(
     [dirty_ratio]=20
     [dirty_background_ratio]=10
 
-    # V8.0 智能配置
-    [decision_engine_enabled]=false
-    [decision_engine_interval]=5
-    [stream_processor_enabled]=false
-    [adaptive_tuning_enabled]=false
-    [adaptive_tuning_mode]=auto
-
-    # 轻量级模式配置
-    [mode]="standard"
-    [web_ui_enabled]=true
-    [api_enabled]=true
-    [monitoring_enabled]=true
-    [tui_enabled]=true
-    [decision_engine_enabled_mode]=true
-    [db_type]="timeseries"  # memory | timeseries | postgresql
-    [max_memory]="2G"
-    [zram_enabled_mode]=true
-    [zram_size]="256M"
-
     # 性能配置
     [io_fuse_threshold]=80
     [memory_pressure_threshold]=70
     [swap_usage_threshold]=50
+
+    # UI配置
+    [refresh_interval]=1
 )
 
 # ==============================================================================
@@ -303,9 +270,9 @@ validate_config() {
     fi
 
     # 验证布尔值
-    local bool_keys=("zram_enabled" "swap_enabled" "decision_engine_enabled")
+    local bool_keys=("zram_enabled" "swap_enabled")
     for key in "${bool_keys[@]}"; do
-        local value="${CONFIG_CENTER[$key]}"
+        local value="${CONFIG_CENTER[$key]:-false}"
         if [[ "${value}" != "true" ]] && [[ "${value}" != "false" ]]; then
             log_warn "无效的布尔值配置: ${key}=${value}"
         fi
@@ -319,10 +286,6 @@ validate_config() {
 # ==============================================================================
 reset_config() {
     CONFIG_CENTER=(
-        [cache_ttl]=3
-        [cache_enabled]=true
-        [cache_max_size]=1000
-        [refresh_interval]=1
         [log_level]=1
         [log_max_size_mb]=50
         [log_retention_days]=30
@@ -337,24 +300,9 @@ reset_config() {
         [vfs_cache_pressure]=100
         [dirty_ratio]=20
         [dirty_background_ratio]=10
-        [decision_engine_enabled]=false
-        [decision_engine_interval]=5
-        [stream_processor_enabled]=false
-        [adaptive_tuning_enabled]=false
-        [adaptive_tuning_mode]=auto
         [io_fuse_threshold]=80
         [memory_pressure_threshold]=70
         [swap_usage_threshold]=50
-        [mode]="standard"
-        [web_ui_enabled]=true
-        [api_enabled]=true
-        [monitoring_enabled]=true
-        [tui_enabled]=true
-        [decision_engine_enabled_mode]=true
-        [db_type]="timeseries"
-        [max_memory]="2G"
-        [zram_enabled_mode]=true
-        [zram_size]="256M"
     )
 
     log_info "配置已重置为默认值"
@@ -417,7 +365,7 @@ get_version_info() {
     cat <<EOF
 Z-Panel Pro ${VERSION} (${CODENAME})
 Build Date: ${BUILD_DATE}
-Enterprise Edition
+Lightweight Edition
 EOF
 }
 

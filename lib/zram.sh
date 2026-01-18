@@ -1,15 +1,16 @@
 #!/bin/bash
 # ==============================================================================
-# Z-Panel Pro - ZRAM????
+# Z-Panel Pro V9.0 - ZRAM管理模块
 # ==============================================================================
-# @description    ZRAM???????
-# @version       7.1.0-Enterprise
+# @description    ZRAM设备管理与配置
+# @version       9.0.0-Lightweight
 # @author        Z-Panel Team
+# @license       MIT License
 # ==============================================================================
 
 # ==============================================================================
-# ?????ZRAM??
-# @return: ??????zram0?
+# 获取可用ZRAM设备
+# @return: 设备名，如zram0
 # ==============================================================================
 get_available_zram_device() {
     local cached_device
@@ -20,7 +21,7 @@ get_available_zram_device() {
         return 0
     fi
 
-    # ??????ZRAM??
+    # 查找可用的ZRAM设备
     for i in {0..15}; do
         if [[ -e "/sys/block/zram${i}" ]] && ! swapon --show=NAME | grep -q "zram${i}"; then
             set_config "_zram_device_cache" "zram${i}"
@@ -29,7 +30,7 @@ get_available_zram_device() {
         fi
     done
 
-    # ?????
+    # 动态添加设备
     if [[ -e /sys/class/zram-control/hot_add ]]; then
         local device_num
         device_num=$(cat /sys/class/zram-control/hot_add)
@@ -42,62 +43,62 @@ get_available_zram_device() {
 }
 
 # ==============================================================================
-# ???ZRAM??
-# @return: ????
+# 初始化ZRAM设备
+# @return: 设备名
 # ==============================================================================
 initialize_zram_device() {
-    # ??ZRAM??
+    # 加载ZRAM模块
     if ! lsmod | grep -q zram; then
         if ! modprobe zram 2>/dev/null; then
-            handle_error "ZRAM_INIT" "???? ZRAM ??" "exit"
+            handle_error "ZRAM_INIT" "无法加载 ZRAM 模块" "exit"
         fi
-        log_info "ZRAM ?????"
+        log_info "ZRAM 模块已加载"
     fi
 
-    # ??????
+    # 查找可用设备
     local zram_device
     zram_device=$(get_available_zram_device) || {
-        handle_error "ZRAM_INIT" "??????? ZRAM ??" "exit"
+        handle_error "ZRAM_INIT" "无法获取可用的 ZRAM 设备" "exit"
     }
 
-    # ????ZRAM??
+    # 禁用已存在的ZRAM设备
     if swapon --show=NAME --noheadings 2>/dev/null | grep -q zram; then
         local failed_devices=()
         for device in $(swapon --show=NAME --noheadings 2>/dev/null | grep zram); do
             if ! swapoff "${device}" 2>/dev/null; then
-                log_warn "??????: ${device}"
+                log_warn "无法停用: ${device}"
                 failed_devices+=("${device}")
             fi
         done
 
         if [[ ${#failed_devices[@]} -gt 0 ]]; then
-            log_error "????????: ${failed_devices[*]}"
+            log_error "无法停用的设备: ${failed_devices[*]}"
             return 1
         fi
     fi
 
-    # ????
+    # 重置设备
     if [[ -e "/sys/block/${zram_device}/reset" ]]; then
         echo 1 > "/sys/block/${zram_device}/reset" 2>/dev/null || true
         sleep 0.3
     fi
 
-    # ??????
+    # 验证设备
     if [[ ! -e "/dev/${zram_device}" ]]; then
-        handle_error "ZRAM_INIT" "ZRAM ?????: /dev/${zram_device}" "exit"
+        handle_error "ZRAM_INIT" "ZRAM 设备不存在: /dev/${zram_device}" "exit"
     fi
 
-    log_info "ZRAM ??????: ${zram_device}"
+    log_info "ZRAM 设备已初始化: ${zram_device}"
     echo "${zram_device}"
     return 0
 }
 
 # ==============================================================================
-# ????????
-# @return: ????
+# 检测最佳压缩算法
+# @return: 算法名
 # ==============================================================================
 detect_best_algorithm() {
-    log_info "????????..."
+    log_info "检测最佳压缩算法..."
 
     local cpu_flags
     cpu_flags=$(cat /proc/cpuinfo | grep -m1 "flags" | sed 's/flags://')
@@ -126,17 +127,17 @@ detect_best_algorithm() {
             best_algo="${algo}"
         fi
 
-        log_info "${algo}: ?? ${score}"
+        log_info "${algo}: 得分 ${score}"
     done
 
-    log_info "????: ${best_algo}"
+    log_info "最佳算法: ${best_algo}"
     echo "${best_algo}"
 }
 
 # ==============================================================================
-# ??ZRAM??
-# @param algorithm: ?????auto/??????
-# @return: ????
+# 获取ZRAM压缩算法
+# @param algorithm: 指定算法或auto自动检测
+# @return: 算法名
 # ==============================================================================
 get_zram_algorithm() {
     local algorithm="${1:-auto}"
@@ -149,10 +150,10 @@ get_zram_algorithm() {
 }
 
 # ==============================================================================
-# ??ZRAM??
-# @param zram_device: ZRAM???
-# @param algorithm: ????
-# @return: ???????
+# 配置ZRAM压缩
+# @param zram_device: ZRAM设备名
+# @param algorithm: 压缩算法
+# @return: 实际使用的算法
 # ==============================================================================
 configure_zram_compression() {
     local zram_device="$1"
@@ -164,12 +165,12 @@ configure_zram_compression() {
 
         if echo "${supported}" | grep -q "${algorithm}"; then
             if echo "${algorithm}" > "/sys/block/${zram_device}/comp_algorithm" 2>/dev/null; then
-                log_info "??????: ${algorithm}"
+                log_info "压缩算法: ${algorithm}"
             else
-                log_warn "???????????????"
+                log_warn "设置压缩算法失败，使用备用算法"
             fi
         else
-            # ??????
+            # 使用备用算法
             local fallback
             fallback=$(echo "${supported}" | awk -F'[][]' '{print $2}' | head -1)
 
@@ -181,81 +182,81 @@ configure_zram_compression() {
 
             echo "${fallback}" > "/sys/block/${zram_device}/comp_algorithm" 2>/dev/null || true
             algorithm="${fallback}"
-            log_info "??????: ${algorithm}"
+            log_info "压缩算法: ${algorithm}"
         fi
     fi
 
-    # ??????
+    # 设置压缩流数
     if [[ -e "/sys/block/${zram_device}/max_comp_streams" ]]; then
         echo "${SYSTEM_INFO[cpu_cores]}" > "/sys/block/${zram_device}/max_comp_streams" 2>/dev/null || true
-        log_info "??????: ${SYSTEM_INFO[cpu_cores]}"
+        log_info "压缩流数: ${SYSTEM_INFO[cpu_cores]}"
     fi
 
     echo "${algorithm}"
 }
 
 # ==============================================================================
-# ??ZRAM??
-# @param zram_device: ZRAM???
-# @param zram_size: ZRAM???MB?
-# @param phys_limit: ???????MB?
-# @return: 0????1???
+# 配置ZRAM限制
+# @param zram_device: ZRAM设备名
+# @param zram_size: ZRAM大小（MB）
+# @param phys_limit: 物理内存限制（MB）
+# @return: 0成功或1失败
 # ==============================================================================
 configure_zram_limits() {
     local zram_device="$1"
     local zram_size="$2"
     local phys_limit="$3"
 
-    # ??????
+    # 设置磁盘大小
     local zram_bytes=$((zram_size * 1024 * 1024)) || true
     if ! echo "${zram_bytes}" > "/sys/block/${zram_device}/disksize" 2>/dev/null; then
-        handle_error "ZRAM_LIMIT" "?? ZRAM ????"
+        handle_error "ZRAM_LIMIT" "设置 ZRAM 大小失败"
         return 1
     fi
 
-    # ????????
+    # 设置物理内存限制
     if [[ -e "/sys/block/${zram_device}/mem_limit" ]]; then
         local phys_limit_bytes=$((phys_limit * 1024 * 1024)) || true
         echo "${phys_limit_bytes}" > "/sys/block/${zram_device}/mem_limit" 2>/dev/null || true
-        log_info "????????????Limit: ${phys_limit}MB?"
+        log_info "物理内存限制: ${phys_limit}MB (防止过度压缩)"
     fi
 
     return 0
 }
 
 # ==============================================================================
-# ??ZRAM Swap
-# @param zram_device: ZRAM???
-# @return: 0????1???
+# 启用ZRAM Swap
+# @param zram_device: ZRAM设备名
+# @return: 0成功或1失败
 # ==============================================================================
 enable_zram_swap() {
     local zram_device="$1"
 
-    # ???ZRAM??
+    # 创建ZRAM交换空间
     if ! mkswap "/dev/${zram_device}" > /dev/null 2>&1; then
-        handle_error "ZRAM_SWAP" "??? ZRAM ??"
+        handle_error "ZRAM_SWAP" "创建 ZRAM 交换空间失败"
         return 1
     fi
 
-    # ??Swap
+    # 启用Swap
     if ! swapon -p "$(get_config 'zram_priority')" "/dev/${zram_device}" > /dev/null 2>&1; then
-        handle_error "ZRAM_SWAP" "?? ZRAM ??"
+        handle_error "ZRAM_SWAP" "启用 ZRAM Swap失败"
         return 1
     fi
 
-    # ????
+    # 清除缓存
     set_config "_zram_device_cache" ""
     clear_cache
 
     ZRAM_ENABLED=true
-    log_info "ZRAM Swap ???: ${zram_device}"
+    log_info "ZRAM Swap 已启用: ${zram_device}"
     return 0
 }
 
 # ==============================================================================
-# ??ZRAM??
-# @param algorithm: ????
-# @param mode: ????
+# 准备ZRAM参数
+# @param algorithm: 压缩算法
+# @param mode: 策略模式
 # @return: "algorithm mode zram_ratio phys_limit swap_size swappiness dirty_ratio min_free zram_size"
 # ==============================================================================
 prepare_zram_params() {
@@ -272,7 +273,7 @@ prepare_zram_params() {
     [[ ${zram_size} -lt 512 ]] && zram_size=512
 
     if ! validate_positive_integer "${zram_size}" || ! validate_positive_integer "${phys_limit}"; then
-        handle_error "ZRAM_PARAMS" "ZRAM ??????"
+        handle_error "ZRAM_PARAMS" "ZRAM 参数验证失败"
         return 1
     fi
 
@@ -281,13 +282,13 @@ prepare_zram_params() {
 }
 
 # ==============================================================================
-# ??ZRAM??
-# @param algorithm: ????
-# @param mode: ????
-# @param zram_ratio: ZRAM????
-# @param zram_size: ZRAM???MB?
-# @param phys_limit: ???????MB?
-# @return: 0????1???
+# 保存ZRAM配置
+# @param algorithm: 压缩算法
+# @param mode: 策略模式
+# @param zram_ratio: ZRAM比例
+# @param zram_size: ZRAM大小（MB）
+# @param phys_limit: 物理内存限制（MB）
+# @return: 0成功，1失败
 # ==============================================================================
 save_zram_config() {
     local algorithm="$1"
@@ -299,16 +300,16 @@ save_zram_config() {
     local content
     cat <<EOF
 # ============================================================================
-# Z-Panel Pro ZRAM ??
+# Z-Panel Pro ZRAM 配置
 # ============================================================================
-# ???????????
+# 自动生成，请勿手动修改
 #
-# ALGORITHM: ZRAM ???? (auto/zstd/lz4/lzo)
-# STRATEGY: ???????
-# PERCENT: ZRAM ???????????
-# PRIORITY: Swap ???
-# SIZE: ZRAM ?????MB?
-# PHYS_LIMIT: ?????????MB?
+# ALGORITHM: ZRAM 压缩算法 (auto/zstd/lz4/lzo)
+# STRATEGY: 优化策略模式
+# PERCENT: ZRAM 占用物理内存的百分比
+# PRIORITY: Swap 优先级
+# SIZE: ZRAM 大小（MB）
+# PHYS_LIMIT: 物理内存限制（MB）
 # ============================================================================
 
 ALGORITHM=${algorithm}
@@ -320,24 +321,24 @@ PHYS_LIMIT=${phys_limit}
 EOF
 
     if save_config_file "${ZRAM_CONFIG_FILE}" "${content}"; then
-        log_info "ZRAM ?????"
+        log_info "ZRAM 配置已保存"
         return 0
     else
-        log_error "ZRAM ??????"
+        log_error "ZRAM 配置保存失败"
         return 1
     fi
 }
 
 # ==============================================================================
-# ??ZRAM??
-# @return: 0????1???
+# 创建ZRAM服务
+# @return: 0成功，1失败
 # ==============================================================================
 create_zram_service() {
-    log_info "?? ZRAM ?????..."
+    log_info "创建 ZRAM 自动启动服务..."
 
     local service_script="${INSTALL_DIR}/zram-start.sh"
 
-    # ??????
+    # 创建启动脚本
     cat > "${service_script}" <<'SERVICE_SCRIPT'
 #!/bin/bash
 set -o pipefail
@@ -355,49 +356,49 @@ log() {
 if [[ -f "$CONF_DIR/zram.conf" ]]; then
     source "$CONF_DIR/zram.conf"
 
-    log "???? ZRAM ??..."
+    log "正在加载 ZRAM 模块..."
 
     modprobe zram 2>/dev/null || {
-        log "???? zram ??"
+        log "无法加载 zram 模块"
         exit 1
     }
 
     if [[ -e /sys/block/zram0/reset ]]; then
         echo 1 > /sys/block/zram0/reset 2>/dev/null || true
-        log "??? ZRAM ??"
+        log "重置 ZRAM 设备"
     fi
 
     if [[ -e /sys/block/zram0/comp_algorithm ]]; then
         echo "$ALGORITHM" > /sys/block/zram0/comp_algorithm 2>/dev/null || true
-        log "??????: $ALGORITHM"
+        log "压缩算法: $ALGORITHM"
     fi
 
     local zram_bytes=$((SIZE * 1024 * 1024)) || true
     echo "$zram_bytes" > /sys/block/zram0/disksize 2>/dev/null || {
-        log "?? ZRAM ????"
+        log "设置 ZRAM 大小失败"
         exit 1
     }
-    log "?? ZRAM ??: ${SIZE}MB"
+    log "设置 ZRAM 大小: ${SIZE}MB"
 
     if [[ -e /sys/block/zram0/mem_limit ]]; then
         local phys_limit_bytes=$((PHYS_LIMIT * 1024 * 1024)) || true
         echo "$phys_limit_bytes" > /sys/block/zram0/mem_limit 2>/dev/null || true
-        log "????????: ${PHYS_LIMIT}MB"
+        log "物理限制: ${PHYS_LIMIT}MB"
     fi
 
     mkswap /dev/zram0 > /dev/null 2>&1 || {
-        log "??? ZRAM ??"
+        log "创建 ZRAM 交换空间失败"
         exit 1
     }
 
     swapon -p $PRIORITY /dev/zram0 > /dev/null 2>&1 || {
-        log "?? ZRAM ??"
+        log "启用 ZRAM Swap失败"
         exit 1
     }
 
-    log "ZRAM ??????"
+    log "ZRAM 服务启动完成"
 else
-    log "???????: $CONF_DIR/zram.conf"
+    log "配置文件不存在: $CONF_DIR/zram.conf"
     exit 1
 fi
 
@@ -412,7 +413,7 @@ SERVICE_SCRIPT
 
     chmod 700 "${service_script}" 2>/dev/null || true
 
-    # ??systemd??
+    # 创建systemd服务
     if check_systemd; then
         local systemd_service="/etc/systemd/system/zram.service"
 
@@ -438,36 +439,36 @@ SYSTEMD_SERVICE
         systemctl daemon-reload > /dev/null 2>&1
         systemctl enable zram.service > /dev/null 2>&1
 
-        log_info "systemd ?????????"
+        log_info "systemd 服务已配置"
     fi
 
     return 0
 }
 
 # ==============================================================================
-# ??ZRAM??
-# @return: 0????1???
+# 启动ZRAM服务
+# @return: 0成功，1失败
 # ==============================================================================
 start_zram_service() {
     if check_systemd; then
         systemctl daemon-reload > /dev/null 2>&1
         if systemctl is-active --quiet zram.service 2>/dev/null; then
-            log_info "zram.service ?????????"
+            log_info "zram.service 正在运行"
         else
             if systemctl start zram.service > /dev/null 2>&1; then
-                log_info "zram.service ???"
+                log_info "zram.service 已启动"
             else
-                log_warn "zram.service ?????? ZRAM ?????????"
+                log_warn "zram.service 启动失败，ZRAM 可能已在运行"
             fi
         fi
     fi
 }
 
 # ==============================================================================
-# ??ZRAM?????
-# @param algorithm: ???????auto?
-# @param mode: ?????????STRATEGY_MODE?
-# @return: 0????1???
+# 配置ZRAM
+# @param algorithm: 压缩算法（auto或指定算法）
+# @param mode: 策略模式（默认使用STRATEGY_MODE）
+# @return: 0成功或1失败
 # ==============================================================================
 configure_zram() {
     local algorithm="${1:-auto}"
@@ -475,16 +476,16 @@ configure_zram() {
 
     log_info "???? ZRAM (??: ${mode})..."
 
-    # ????
+    # 准备参数
     local params
     params=$(prepare_zram_params "${algorithm}" "${mode}") || return 1
     read -r algorithm mode zram_ratio phys_limit swap_size swappiness dirty_ratio min_free zram_size <<< "${params}"
 
-    # ?????zram-tools
+    # 检查并安装zram-tools
     if ! check_command zramctl; then
-        log_info "?? zram-tools..."
+        log_info "安装 zram-tools..."
         install_packages zram-tools zram-config zstd lz4 lzop || {
-            handle_error "ZRAM_CONFIG" "?? zram-tools ??"
+            handle_error "ZRAM_CONFIG" "安装 zram-tools 失败"
             return 1
         }
     fi
@@ -492,74 +493,74 @@ configure_zram() {
     # ?????
     local zram_device
     zram_device=$(initialize_zram_device) || {
-        handle_error "ZRAM_CONFIG" "??? ZRAM ????"
+        handle_error "ZRAM_CONFIG" "初始化 ZRAM 设备失败"
         return 1
     }
-    log_info "?? ZRAM ??: ${zram_device}"
+    log_info "使用 ZRAM 设备: ${zram_device}"
 
-    # ????
+    # 配置压缩
     algorithm=$(configure_zram_compression "${zram_device}" "${algorithm}")
 
-    # ????
+    # 配置限制
     configure_zram_limits "${zram_device}" "${zram_size}" "${phys_limit}" || {
-        handle_error "ZRAM_CONFIG" "?? ZRAM ????"
+        handle_error "ZRAM_CONFIG" "设置 ZRAM 限制失败"
         return 1
     }
 
-    # ??Swap
+    # 启用Swap
     enable_zram_swap "${zram_device}" || {
-        handle_error "ZRAM_CONFIG" "?? ZRAM swap ??"
+        handle_error "ZRAM_CONFIG" "启用 ZRAM swap 失败"
         return 1
     }
 
-    # ????
+    # 保存配置
     save_zram_config "${algorithm}" "${mode}" "${zram_ratio}" "${zram_size}" "${phys_limit}" || {
-        log_warn "?? ZRAM ????"
+        log_warn "保存 ZRAM 配置失败"
     }
 
-    # ????
+    # 创建服务
     create_zram_service || {
-        log_warn "?? ZRAM ????"
+        log_warn "创建 ZRAM 服务失败"
     }
 
-    # ????
+    # 启动服务
     start_zram_service
 
     set_config "_zram_device_cache" ""
 
-    log_info "ZRAM ????: ${algorithm}, ${zram_size}MB, ???: $(get_config 'zram_priority')"
+    log_info "ZRAM 配置完成: ${algorithm}, ${zram_size}MB, 优先级: $(get_config 'zram_priority')"
 
     return 0
 }
 
 # ==============================================================================
-# ??ZRAM
-# @return: 0???
+# 禁用ZRAM
+# @return: 0成功
 # ==============================================================================
 disable_zram() {
-    log_info "?? ZRAM..."
+    log_info "禁用 ZRAM..."
 
-    # ????ZRAM swap
+    # 停用所有ZRAM swap
     for device in $(swapon --show=NAME --noheadings 2>/dev/null | grep zram); do
         swapoff "${device}" 2>/dev/null || true
     done
 
-    # ????
+    # 重置设备
     if [[ -e /sys/block/zram0/reset ]]; then
         echo 1 > /sys/block/zram0/reset 2>/dev/null || true
     fi
 
-    # ??systemd??
+    # 停用systemd服务
     if check_systemd; then
         systemctl disable zram.service > /dev/null 2>&1
         rm -f /etc/systemd/system/zram.service
         systemctl daemon-reload > /dev/null 2>&1
     fi
 
-    # ????
+    # 清理缓存
     set_config "_zram_device_cache" ""
     clear_cache
 
     ZRAM_ENABLED=false
-    log_info "ZRAM ???"
+    log_info "ZRAM 已禁用"
 }

@@ -1,9 +1,9 @@
 #!/bin/bash
 # ==============================================================================
-# Z-Panel Pro V8.0 - 企业级 Linux 内存优化工具
+# Z-Panel Pro V9.0 - 轻量级 Linux 内存优化工具
 # ==============================================================================
-# @description    ZRAM、Swap、内核参数智能优化管理工具 V8.0 企业版
-# @version       8.0.0-Enterprise
+# @description    ZRAM、Swap、内核参数优化管理工具 V9.0 轻量版
+# @version       9.0.0-Lightweight
 # @author        Z-Panel Team
 # @license       MIT License
 # @website       https://github.com/Z-Panel-Pro/Z-Panel-Pro
@@ -18,15 +18,10 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly LIB_DIR="${SCRIPT_DIR}/lib"
 
 # 核心库加载
-# 基础模块
 source "${LIB_DIR}/core.sh"           # 核心配置和常量
 source "${LIB_DIR}/error_handler.sh"  # 错误处理和日志
 source "${LIB_DIR}/utils.sh"          # 工具函数
 source "${LIB_DIR}/lock.sh"           # 文件锁
-source "${LIB_DIR}/input_validator.sh" # 输入验证模块
-source "${LIB_DIR}/transaction.sh"    # 事务管理模块
-source "${LIB_DIR}/lock_secure.sh"    # 安全文件锁
-# 功能模块
 source "${LIB_DIR}/system.sh"         # 系统检测
 source "${LIB_DIR}/data_collector.sh" # 数据采集
 source "${LIB_DIR}/ui.sh"             # UI渲染
@@ -34,15 +29,8 @@ source "${LIB_DIR}/strategy.sh"       # 策略管理
 source "${LIB_DIR}/zram.sh"           # ZRAM管理
 source "${LIB_DIR}/swap.sh"           # Swap管理
 source "${LIB_DIR}/kernel.sh"         # 内核参数
-source "${LIB_DIR}/backup.sh"         # 备份还原
 source "${LIB_DIR}/monitor.sh"        # 监控面板
 source "${LIB_DIR}/menu.sh"           # 菜单系统
-# V8.0 新增模块
-source "${LIB_DIR}/decision_engine.sh" # 智能决策引擎
-source "${LIB_DIR}/stream_processor.sh" # 流式数据处理
-source "${LIB_DIR}/cache_manager.sh"  # 缓存管理器
-source "${LIB_DIR}/feedback_loop.sh"   # 反馈循环
-source "${LIB_DIR}/adaptive_tuner.sh"  # 自适应调优
 
 # ==============================================================================
 # 全局变量
@@ -163,14 +151,6 @@ check_runtime_env() {
 load_system_config() {
     log_info "加载系统配置..."
 
-    # 加载轻量级配置
-    if [[ -f "${CONFIG_DIR}/lightweight.conf" ]]; then
-        log_info "检测到轻量级模式配置..."
-        safe_source "${CONFIG_DIR}/lightweight.conf"
-        export ZPANEL_MODE="${ZPANEL_MODE:-standard}"
-        log_info "当前运行模式: ${ZPANEL_MODE}"
-    fi
-
     # 加载策略配置
     load_strategy_config
 
@@ -223,7 +203,7 @@ init_system() {
 # 显示帮助信息
 show_help() {
     cat << EOF
-Z-Panel Pro v${VERSION} - 企业级 Linux 内存优化工具 (V8.0 企业版)
+Z-Panel Pro v${VERSION} - 轻量级 Linux 内存优化工具 (V9.0 轻量版)
 
 用法: $0 [选项]
 
@@ -237,33 +217,16 @@ Z-Panel Pro v${VERSION} - 企业级 Linux 内存优化工具 (V8.0 企业版)
 管理选项:
   -e, --enable            启用开机自启
   -d, --disable           禁用开机自启
-  -b, --backup            创建系统备份
-  -r, --restore <ID>      还原系统备份
 
 高级选项:
   --strategy <mode>       设置策略模式 (conservative|balance|aggressive)
   --log-level <level>     设置日志级别 (DEBUG|INFO|WARN|ERROR)
-
-V8.0 新增选项:
-  --start-decision-engine 启动智能决策引擎
-  --stop-decision-engine  停止智能决策引擎
-  --status-decision-engine 查看决策引擎状态
-  --start-stream-processor 启动流式处理器
-  --stop-stream-processor  停止流式处理器
-  --run-adaptive-tuning   执行自适应调优
-  --set-tuning-mode <mode> 设置调优模式 (auto|conservative|aggressive|emergency)
-  --show-cache-stats      显示缓存统计
-  --show-feedback-stats   显示反馈统计
-  --show-adaptive-stats   显示自适应调优统计
 
 示例:
   $0 -m                   显示实时监控面板
   $0 -s                   显示系统状态
   $0 -c                   运行配置向导
   $0 --strategy balance   设置平衡模式
-  $0 --start-decision-engine  启动智能决策引擎
-  $0 --run-adaptive-tuning   执行自适应调优
-  $0 -b                   创建系统备份
 
 官网: https://github.com/Z-Panel-Pro/Z-Panel-Pro
 EOF
@@ -272,7 +235,7 @@ EOF
 # 显示版本信息
 show_version() {
     cat << EOF
-Z-Panel Pro v${VERSION} - Enterprise Edition
+Z-Panel Pro v${VERSION} - Lightweight Edition
 Copyright (c) 2024 Z-Panel Team
 License: MIT License
 Website: https://github.com/Z-Panel-Pro/Z-Panel-Pro
@@ -286,9 +249,6 @@ EOF
 main() {
     local action="menu"
     local strategy=""
-    local backup_id=""
-    local tuning_mode=""
-    local mode=""
 
     # 解析命令行参数
     while [[ $# -gt 0 ]]; do
@@ -321,67 +281,12 @@ main() {
                 action="disable"
                 shift
                 ;;
-            -b|--backup)
-                action="backup"
-                shift
-                ;;
-            -r|--restore)
-                action="restore"
-                backup_id="$2"
-                shift 2
-                ;;
             --strategy)
                 strategy="$2"
                 shift 2
                 ;;
             --log-level)
                 set_log_level "$2"
-                shift 2
-                ;;
-            # V8.0 新增选项
-            --start-decision-engine)
-                action="start_decision_engine"
-                shift
-                ;;
-            --stop-decision-engine)
-                action="stop_decision_engine"
-                shift
-                ;;
-            --status-decision-engine)
-                action="status_decision_engine"
-                shift
-                ;;
-            --start-stream-processor)
-                action="start_stream_processor"
-                shift
-                ;;
-            --stop-stream-processor)
-                action="stop_stream_processor"
-                shift
-                ;;
-            --run-adaptive-tuning)
-                action="run_adaptive_tuning"
-                shift
-                ;;
-            --set-tuning-mode)
-                tuning_mode="$2"
-                action="set_tuning_mode"
-                shift 2
-                ;;
-            --show-cache-stats)
-                action="show_cache_stats"
-                shift
-                ;;
-            --show-feedback-stats)
-                action="show_feedback_stats"
-                shift
-                ;;
-            --show-adaptive-stats)
-                action="show_adaptive_stats"
-                shift
-                ;;
-            --mode)
-                mode="$2"
                 shift 2
                 ;;
             *)
@@ -402,18 +307,6 @@ main() {
 
     # 初始化系统
     init_system
-
-    # 初始化V8.0高级模块 (轻量级模式跳过)
-    if [[ "${ZPANEL_MODE:-standard}" != "lightweight" ]]; then
-        log_info "初始化V8.0高级模块..."
-        init_cache_manager
-        init_feedback_loop
-        init_stream_processor
-        init_adaptive_tuner
-        log_info "V8.0高级模块初始化完成"
-    else
-        log_info "轻量级模式，跳过高级功能初始化"
-    fi
 
     # 设置策略模式
     if [[ -n "${strategy}" ]]; then
@@ -443,115 +336,10 @@ main() {
         disable)
             disable_autostart
             ;;
-        backup)
-            backup_id=$(create_backup)
-            if [[ -n "${backup_id}" ]]; then
-                log_info "备份创建成功: ${backup_id}"
-            else
-                log_error "备份创建失败"
-                exit 1
-            fi
-            ;;
-        restore)
-            if [[ -z "${backup_id}" ]]; then
-                log_error "请指定备份ID"
-                exit 1
-            fi
-            if restore_backup "${backup_id}"; then
-                log_info "备份还原成功，请重启系统使配置生效"
-            else
-                log_error "备份还原失败"
-                exit 1
-            fi
-            ;;
-        # V8.0 新增操作
-        start_decision_engine)
-            log_info "启动智能决策引擎..."
-            if start_decision_engine; then
-                log_info "智能决策引擎已启动"
-            else
-                log_error "智能决策引擎启动失败"
-                exit 1
-            fi
-            ;;
-        stop_decision_engine)
-            log_info "停止智能决策引擎..."
-            if stop_decision_engine; then
-                log_info "智能决策引擎已停止"
-            else
-                log_error "智能决策引擎停止失败"
-                exit 1
-            fi
-            ;;
-        status_decision_engine)
-            log_info "查询智能决策引擎状态..."
-            local status=$(get_decision_engine_status)
-            echo "${status}"
-            ;;
-        start_stream_processor)
-            log_info "启动流式数据处理器..."
-            if start_stream_processor; then
-                log_info "流式数据处理器已启动"
-            else
-                log_error "流式数据处理器启动失败"
-                exit 1
-            fi
-            ;;
-        stop_stream_processor)
-            log_info "停止流式数据处理器..."
-            if stop_stream_processor; then
-                log_info "流式数据处理器已停止"
-            else
-                log_error "流式数据处理器停止失败"
-                exit 1
-            fi
-            ;;
-        run_adaptive_tuning)
-            log_info "执行自适应调优..."
-            if run_adaptive_tuning; then
-                log_info "自适应调优执行完成"
-                local stats=$(get_adaptive_stats)
-                echo "${stats}"
-            else
-                log_error "自适应调优执行失败"
-                exit 1
-            fi
-            ;;
-        set_tuning_mode)
-            if [[ -n "${tuning_mode}" ]]; then
-                if set_tuning_mode "${tuning_mode}"; then
-                    log_info "调优模式已设置: ${tuning_mode}"
-                else
-                    log_error "无效的调优模式: ${tuning_mode}"
-                    exit 1
-                fi
-            fi
-            ;;
-        show_cache_stats)
-            local stats=$(get_cache_stats)
-            echo "${stats}"
-            ;;
-        show_feedback_stats)
-            local stats=$(get_feedback_stats)
-            echo "${stats}"
-            ;;
-        show_adaptive_stats)
-            local stats=$(get_adaptive_stats)
-            echo "${stats}"
-            ;;
         menu)
             main_menu
             ;;
     esac
-
-    # 清理V8.0高级模块 (轻量级模式跳过)
-    if [[ "${ZPANEL_MODE:-standard}" != "lightweight" ]]; then
-        log_debug "清理V8.0高级模块..."
-        cleanup_cache_manager
-        cleanup_feedback_loop
-        cleanup_stream_processor
-        cleanup_adaptive_tuner
-    fi
 
     # 释放文件锁
     release_lock

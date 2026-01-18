@@ -1,14 +1,15 @@
 #!/bin/bash
 # ==============================================================================
-# Z-Panel Pro - Swap??????
+# Z-Panel Pro V9.0 - Swap管理模块
 # ==============================================================================
-# @description    ??Swap????
-# @version       7.1.0-Enterprise
+# @description    Swap文件管理与配置
+# @version       9.0.0-Lightweight
 # @author        Z-Panel Team
+# @license       MIT License
 # ==============================================================================
 
 # ==============================================================================
-# ??Swap????
+# 获取Swap文件信息
 # @return: "total_mb used_mb"
 # ==============================================================================
 get_swap_file_info() {
@@ -30,7 +31,7 @@ get_swap_file_info() {
         return
     fi
 
-    # ???????????
+    # 转换单位为MB
     local swap_total swap_used
     swap_total=$(echo "${swap_info}" | awk '{print $1}')
     swap_used=$(echo "${swap_info}" | awk '{print $2}')
@@ -45,119 +46,119 @@ get_swap_file_info() {
 }
 
 # ==============================================================================
-# ??Swap??????
-# @return: 0????1????
+# 检查Swap文件是否启用
+# @return: 0表示启用，1表示未启用
 # ==============================================================================
 is_swap_file_enabled() {
     [[ -f "${SWAP_FILE_PATH}" ]] && swapon --show=NAME --noheadings 2>/dev/null | grep -q "${SWAP_FILE_PATH}"
 }
 
 # ==============================================================================
-# ??Swap??
-# @param size_mb: Swap?????MB?
-# @param priority: Swap???????PHYSICAL_SWAP_PRIORITY?
-# @return: 0????1???
+# 创建Swap文件
+# @param size_mb: Swap文件大小（MB）
+# @param priority: Swap优先级，默认使用PHYSICAL_SWAP_PRIORITY
+# @return: 0成功，1失败
 # ==============================================================================
 create_swap_file() {
     local size_mb="$1"
     local priority="${2:-$(get_config 'physical_swap_priority')}"
 
-    log_info "???? Swap ?? (${size_mb}MB)..."
+    log_info "创建 Swap 文件 (${size_mb}MB)..."
 
-    # ????
+    # 参数验证
     if ! validate_positive_integer "${size_mb}"; then
-        handle_error "SWAP_CREATE" "??? Swap ??: ${size_mb}"
+        handle_error "SWAP_CREATE" "无效的 Swap 大小: ${size_mb}"
         return 1
     fi
 
     if [[ ${size_mb} -lt 128 ]]; then
-        handle_error "SWAP_CREATE" "Swap ???????? 128MB"
+        handle_error "SWAP_CREATE" "Swap 大小不能小于 128MB"
         return 1
     fi
 
     if [[ ${size_mb} -gt $((SYSTEM_INFO[total_memory_mb] * 4)) ]]; then
-        log_warn "Swap ??????????? 4 ????????"
+        log_warn "Swap 大小超过物理内存的 4 倍，可能影响性能"
     fi
 
-    # ????
+    # 创建目录
     mkdir -p "$(dirname "${SWAP_FILE_PATH}")"
 
-    # ???????Swap??
+    # 如果已存在Swap文件，先删除
     if [[ -f "${SWAP_FILE_PATH}" ]]; then
-        log_warn "Swap ?????????..."
+        log_warn "Swap 文件已存在，重新创建..."
         disable_swap_file
         rm -f "${SWAP_FILE_PATH}"
     fi
 
-    # ??Swap??
+    # 创建Swap文件
     if ! fallocate -l "${size_mb}M" "${SWAP_FILE_PATH}" 2>/dev/null; then
-        log_warn "fallocate ??????? dd..."
+        log_warn "fallocate 失败，尝试使用 dd..."
         dd if=/dev/zero of="${SWAP_FILE_PATH}" bs=1M count="${size_mb}" status=none || {
-            handle_error "SWAP_CREATE" "?? Swap ????"
+            handle_error "SWAP_CREATE" "创建 Swap 文件失败"
             return 1
         }
     fi
 
-    # ??????
+    # 设置权限
     chmod 600 "${SWAP_FILE_PATH}"
 
-    # ???Swap??
+    # 创建Swap空间
     if ! mkswap "${SWAP_FILE_PATH}" > /dev/null 2>&1; then
-        handle_error "SWAP_CREATE" "??? Swap ????"
+        handle_error "SWAP_CREATE" "创建 Swap 空间失败"
         rm -f "${SWAP_FILE_PATH}"
         return 1
     fi
 
-    # ??Swap??
+    # 启用Swap
     if ! swapon -p "${priority}" "${SWAP_FILE_PATH}" > /dev/null 2>&1; then
-        handle_error "SWAP_CREATE" "?? Swap ????"
+        handle_error "SWAP_CREATE" "启用 Swap 失败"
         rm -f "${SWAP_FILE_PATH}"
         return 1
     fi
 
-    # ???fstab
+    # 添加到fstab
     if [[ ! -f /etc/fstab ]] || ! grep -q "${SWAP_FILE_PATH}" /etc/fstab; then
         echo "${SWAP_FILE_PATH} none swap sw,pri=${priority} 0 0" >> /etc/fstab
-        log_info "???? /etc/fstab"
+        log_info "已添加到 /etc/fstab"
     fi
 
-    # ????
+    # 清除缓存
     clear_cache
 
     SWAP_ENABLED=true
-    log_info "?? Swap ??????: ${size_mb}MB, ???: ${priority}"
+    log_info "Swap 文件创建成功: ${size_mb}MB, 优先级: ${priority}"
     return 0
 }
 
 # ==============================================================================
-# ??Swap??
-# @return: 0???
+# 禁用Swap文件
+# @return: 0成功
 # ==============================================================================
 disable_swap_file() {
-    log_info "???? Swap ??..."
+    log_info "删除 Swap 文件..."
 
-    # ??Swap
+    # 停用Swap
     if [[ -f "${SWAP_FILE_PATH}" ]]; then
         swapoff "${SWAP_FILE_PATH}" 2>/dev/null || true
     fi
 
-    # ?fstab??
+    # 从fstab删除
     if [[ -f /etc/fstab ]] && grep -q "${SWAP_FILE_PATH}" /etc/fstab; then
-        # ??fstab
+        # 备份fstab
         local backup_file="/etc/fstab.bak.$(date +%Y%m%d_%H%M%S)"
         cp /etc/fstab "${backup_file}" 2>/dev/null || true
 
         sed -i "\|${SWAP_FILE_PATH}|d" /etc/fstab
-        log_info "?? /etc/fstab ??"
+        log_info "已从 /etc/fstab 删除"
     fi
 
-    # ????
+    # 删除文件
     if [[ -f "${SWAP_FILE_PATH}" ]]; then
         rm -f "${SWAP_FILE_PATH}"
-        log_info "??? Swap ??"
+        log_info "已删除 Swap 文件"
     fi
 
-    # ????
+    # 清除缓存
     clear_cache
 
     SWAP_ENABLED=false
@@ -165,14 +166,14 @@ disable_swap_file() {
 }
 
 # ==============================================================================
-# ????Swap
-# @param mode: ????
-# @return: 0????1???
+# 配置物理Swap
+# @param mode: 策略模式
+# @return: 0成功或1失败
 # ==============================================================================
 configure_physical_swap() {
     local mode="${1:-${STRATEGY_MODE}}"
 
-    log_info "???? Swap (??: ${mode})..."
+    log_info "配置 Swap (模式: ${mode})..."
 
     local zram_ratio phys_limit swap_size swappiness dirty_ratio min_free
     read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< "$(calculate_strategy "${mode}")"
@@ -181,7 +182,7 @@ configure_physical_swap() {
         swap_size=128
     fi
 
-    # ??????????
+    # 检查是否已存在Swap
     if is_swap_file_enabled; then
         local swap_info
         swap_info=$(get_swap_file_info)
@@ -190,16 +191,16 @@ configure_physical_swap() {
 
         local tolerance=100
         if [[ ${current_size} -ge $((swap_size - tolerance)) ]] && [[ ${current_size} -le $((swap_size + tolerance)) ]]; then
-            log_info "?? Swap ??????? (${current_size}MB)"
+            log_info "Swap 大小符合要求 (${current_size}MB)"
             return 0
         fi
 
-        log_info "???? Swap ??: ${current_size}MB -> ${swap_size}MB"
+        log_info "调整 Swap 大小: ${current_size}MB -> ${swap_size}MB"
         disable_swap_file
     fi
 
     if ! create_swap_file "${swap_size}" "$(get_config 'physical_swap_priority')"; then
-        handle_error "SWAP_CONFIG" "?? Swap ????"
+        handle_error "SWAP_CONFIG" "创建 Swap 文件失败"
         return 1
     fi
 
@@ -207,10 +208,10 @@ configure_physical_swap() {
 }
 
 # ==============================================================================
-# ??Swap??
-# @param swap_size: Swap???MB?
-# @param enabled: ?????true/false?
-# @return: 0????1???
+# 保存Swap配置
+# @param swap_size: Swap文件大小（MB）
+# @param enabled: 是否启用true/false
+# @return: 0成功，1失败
 # ==============================================================================
 save_swap_config() {
     local swap_size="$1"
@@ -219,13 +220,13 @@ save_swap_config() {
     local content
     cat <<EOF
 # ============================================================================
-# Z-Panel Pro ?? Swap ??
+# Z-Panel Pro 物理 Swap 配置
 # ============================================================================
-# ???????????
+# 自动生成，请勿手动修改
 #
-# SWAP_SIZE: ?? Swap ?????MB?
-# SWAP_ENABLED: ?????? Swap
-# SWAP_PRIORITY: Swap ????ZRAM=$(get_config 'zram_priority'), ?? Swap=$(get_config 'physical_swap_priority')?
+# SWAP_SIZE: 物理 Swap 文件大小（MB）
+# SWAP_ENABLED: 是否启用物理 Swap
+# SWAP_PRIORITY: Swap 优先级 (ZRAM=$(get_config 'zram_priority'), 物理 Swap=$(get_config 'physical_swap_priority'))
 # ============================================================================
 
 SWAP_SIZE=${swap_size}
@@ -234,28 +235,28 @@ SWAP_PRIORITY=$(get_config 'physical_swap_priority')
 EOF
 
     if save_config_file "${SWAP_CONFIG_FILE}" "${content}"; then
-        log_info "Swap ?????"
+        log_info "Swap 配置已保存"
         return 0
     else
-        log_error "Swap ??????"
+        log_error "Swap 配置保存失败"
         return 1
     fi
 }
 
 # ==============================================================================
-# ????Swap????
-# @return: ????Swap????
+# 获取所有Swap设备
+# @return: 所有Swap设备信息
 # ==============================================================================
 get_all_swap_devices() {
-    echo "=== ?? Swap ?? ==="
+    echo "=== 所有 Swap 设备 ==="
     echo ""
 
     if swapon --show=NAME,SIZE,USED,PRIO --noheadings 2>/dev/null | grep -q .; then
-        printf "%-30s %10s %10s %10s\n" "??" "??" "??" "???"
+        printf "%-30s %10s %10s %10s\n" "设备" "大小" "已用" "优先级"
         printf "%-30s %10s %10s %10s\n" "----" "----" "----" "----"
 
         swapon --show=NAME,SIZE,USED,PRIO --noheadings 2>/dev/null | while read -r name size used prio; do
-            # ????
+            # 转换单位
             local size_mb
             size_mb=$(convert_size_to_mb "${size}")
             local used_mb
@@ -264,12 +265,12 @@ get_all_swap_devices() {
             printf "%-30s %10s %10s %10s\n" "${name}" "${size_mb}MB" "${used_mb}MB" "${prio}"
         done
     else
-        echo "?????? Swap ??"
+        echo "当前没有 Swap 设备"
     fi
 
     echo ""
-    echo "=== ?? ==="
+    echo "=== 汇总 ==="
     local swap_total swap_used
     read -r swap_total swap_used <<< "$(get_swap_info false)"
-    printf "??: %sMB  ??: %sMB\n" "${swap_total}" "${swap_used}"
+    printf "总计: %sMB  已用: %sMB\n" "${swap_total}" "${swap_used}"
 }
