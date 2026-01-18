@@ -218,3 +218,205 @@ get_available_strategies() {
     echo "${STRATEGY_BALANCE}"
     echo "${STRATEGY_AGGRESSIVE}"
 }
+
+# ==============================================================================
+# 自适应策略选择（世界顶级标准）
+# ==============================================================================
+
+# 自适应策略分析器
+analyze_adaptive_strategy() {
+    local mem_usage zram_usage swap_usage load_avg
+    local mem_pressure=0
+    local score_conservative=0
+    local score_balance=0
+    local score_aggressive=0
+
+    # 获取系统指标
+    mem_usage=$(get_memory_usage false)
+    zram_usage=$(get_zram_usage_percent)
+    swap_usage=$(get_swap_usage false)
+    load_avg=$(awk '{print $1}' /proc/loadavg)
+
+    # 内存压力分析 (权重: 40%)
+    if [[ ${mem_usage} -gt 90 ]]; then
+        mem_pressure=100
+        ((score_aggressive += 40))
+    elif [[ ${mem_usage} -gt 80 ]]; then
+        mem_pressure=75
+        ((score_aggressive += 30))
+        ((score_balance += 10))
+    elif [[ ${mem_usage} -gt 70 ]]; then
+        mem_pressure=50
+        ((score_balance += 25))
+        ((score_aggressive += 15))
+    elif [[ ${mem_usage} -gt 50 ]]; then
+        mem_pressure=25
+        ((score_balance += 30))
+        ((score_conservative += 10))
+    else
+        mem_pressure=0
+        ((score_conservative += 35))
+        ((score_balance += 5))
+    fi
+
+    # ZRAM使用率分析 (权重: 25%)
+    if [[ ${zram_usage} -gt 90 ]]; then
+        ((score_aggressive += 25))
+    elif [[ ${zram_usage} -gt 70 ]]; then
+        ((score_aggressive += 20))
+        ((score_balance += 5))
+    elif [[ ${zram_usage} -gt 50 ]]; then
+        ((score_balance += 20))
+        ((score_aggressive += 5))
+    elif [[ ${zram_usage} -gt 30 ]]; then
+        ((score_balance += 15))
+        ((score_conservative += 10))
+    else
+        ((score_conservative += 20))
+        ((score_balance += 5))
+    fi
+
+    # Swap使用率分析 (权重: 20%)
+    if [[ ${swap_usage} -gt 80 ]]; then
+        ((score_aggressive += 20))
+    elif [[ ${swap_usage} -gt 60 ]]; then
+        ((score_aggressive += 15))
+        ((score_balance += 5))
+    elif [[ ${swap_usage} -gt 40 ]]; then
+        ((score_balance += 15))
+        ((score_aggressive += 5))
+    elif [[ ${swap_usage} -gt 20 ]]; then
+        ((score_balance += 10))
+        ((score_conservative += 10))
+    else
+        ((score_conservative += 15))
+        ((score_balance += 5))
+    fi
+
+    # 系统负载分析 (权重: 15%)
+    local cpu_cores=${SYSTEM_INFO[cpu_cores]:-1}
+    local load_percent=$(echo "${load_avg} ${cpu_cores}" | awk '{printf "%.0f", ($1 / $2) * 100}')
+
+    if [[ ${load_percent} -gt 90 ]]; then
+        ((score_aggressive += 15))
+    elif [[ ${load_percent} -gt 70 ]]; then
+        ((score_aggressive += 10))
+        ((score_balance += 5))
+    elif [[ ${load_percent} -gt 50 ]]; then
+        ((score_balance += 12))
+        ((score_aggressive += 3))
+    elif [[ ${load_percent} -gt 30 ]]; then
+        ((score_balance += 8))
+        ((score_conservative += 7))
+    else
+        ((score_conservative += 12))
+        ((score_balance += 3))
+    fi
+
+    # 确定推荐策略
+    local recommended_strategy="${STRATEGY_BALANCE}"
+    local max_score=${score_balance}
+
+    if [[ ${score_aggressive} -gt ${max_score} ]]; then
+        max_score=${score_aggressive}
+        recommended_strategy="${STRATEGY_AGGRESSIVE}"
+    fi
+
+    if [[ ${score_conservative} -gt ${max_score} ]]; then
+        recommended_strategy="${STRATEGY_CONSERVATIVE}"
+    fi
+
+    # 输出分析结果
+    cat <<EOF
+{
+    "recommended_strategy": "${recommended_strategy}",
+    "scores": {
+        "conservative": ${score_conservative},
+        "balance": ${score_balance},
+        "aggressive": ${score_aggressive}
+    },
+    "metrics": {
+        "memory_usage_percent": ${mem_usage},
+        "zram_usage_percent": ${zram_usage},
+        "swap_usage_percent": ${swap_usage},
+        "load_average": ${load_avg},
+        "load_percent": ${load_percent},
+        "memory_pressure": ${mem_pressure}
+    },
+    "analysis": {
+        "memory_pressure_weight": 40,
+        "zram_usage_weight": 25,
+        "swap_usage_weight": 20,
+        "load_average_weight": 15
+    }
+}
+EOF
+}
+
+# 应用自适应策略
+apply_adaptive_strategy() {
+    log_info "分析系统状态，选择最优策略..."
+
+    # 获取自适应策略推荐
+    local analysis
+    analysis=$(analyze_adaptive_strategy)
+
+    # 提取推荐策略
+    local recommended_strategy
+    recommended_strategy=$(echo "${analysis}" | grep -o '"recommended_strategy":"[^"]*"' | cut -d'"' -f4)
+
+    # 提取分数
+    local score_conservative score_balance score_aggressive
+    score_conservative=$(echo "${analysis}" | grep -o '"conservative": [0-9]*' | awk '{print $2}')
+    score_balance=$(echo "${analysis}" | grep -o '"balance": [0-9]*' | awk '{print $2}')
+    score_aggressive=$(echo "${analysis}" | grep -o '"aggressive": [0-9]*' | awk '{print $2}')
+
+    log_info "策略评分: Conservative=${score_conservative}, Balance=${score_balance}, Aggressive=${score_aggressive}"
+    log_info "推荐策略: ${recommended_strategy}"
+
+    # 设置策略
+    if set_strategy_mode "${recommended_strategy}"; then
+        log_info "自适应策略已应用: ${recommended_strategy}"
+        return 0
+    else
+        log_error "应用自适应策略失败"
+        return 1
+    fi
+}
+
+# 获取自适应策略报告
+get_adaptive_strategy_report() {
+    local analysis
+    analysis=$(analyze_adaptive_strategy)
+
+    local recommended_strategy
+    recommended_strategy=$(echo "${analysis}" | grep -o '"recommended_strategy":"[^"]*"' | cut -d'"' -f4)
+
+    local mem_usage zram_usage swap_usage load_avg
+    mem_usage=$(echo "${analysis}" | grep -o '"memory_usage_percent": [0-9]*' | awk '{print $2}')
+    zram_usage=$(echo "${analysis}" | grep -o '"zram_usage_percent": [0-9]*' | awk '{print $2}')
+    swap_usage=$(echo "${analysis}" | grep -o '"swap_usage_percent": [0-9]*' | awk '{print $2}')
+    load_avg=$(echo "${analysis}" | grep -o '"load_average": [0-9.]*' | awk '{print $2}')
+
+    cat <<EOF
+自适应策略分析报告
+================================================================================
+
+系统状态:
+  内存使用率: ${mem_usage}%
+  ZRAM使用率: ${zram_usage}%
+  Swap使用率: ${swap_usage}%
+  系统负载: ${load_avg}
+
+推荐策略: ${recommended_strategy}
+
+策略说明:
+  Conservative: 保守策略，适合资源充足、稳定性优先的场景
+  Balance: 平衡策略，适合大多数通用场景
+  Aggressive: 激进策略，适合资源紧张、性能优先的场景
+
+建议: 根据当前系统状态，推荐使用 ${recommended_strategy} 策略以获得最佳性能
+
+================================================================================
+EOF
+}

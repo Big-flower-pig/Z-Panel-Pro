@@ -16,6 +16,14 @@ declare -g CACHE_LAST_UPDATE=0
 declare -gA CACHE_DATA=()
 
 # ==============================================================================
+# 缓存统计
+# ==============================================================================
+declare -g CACHE_HITS=0
+declare -g CACHE_MISSES=0
+declare -g CACHE_UPDATES=0
+declare -gA CACHE_KEY_ACCESS_COUNT=()
+
+# ==============================================================================
 # 缓存管理
 # ==============================================================================
 
@@ -26,11 +34,15 @@ update_cache() {
     local cache_age=$((current_time - CACHE_LAST_UPDATE))
 
     if [[ ${cache_age} -lt ${CACHE_TTL} ]]; then
-        log_debug "缓存有效 (缓存: ${cache_age}s, TTL: ${CACHE_TTL}s)"
+        ((CACHE_HITS++)) || true
+        log_debug "缓存命中 (缓存: ${cache_age}s, TTL: ${CACHE_TTL}s, 命中率: $(calculate_cache_hit_rate)%)"
         return 0
     fi
 
-    log_debug "更新缓存..."
+    ((CACHE_MISSES++)) || true
+    ((CACHE_UPDATES++)) || true
+
+    log_debug "更新缓存 (命中率: $(calculate_cache_hit_rate)%)..."
 
     # 采集内存信息 (total used avail buff_cache)
     local mem_info
@@ -59,7 +71,52 @@ clear_cache() {
 # 获取缓存值
 get_cache_value() {
     local key="$1"
+    ((CACHE_KEY_ACCESS_COUNT[$key]++)) || true
     echo "${CACHE_DATA[$key]:-}"
+}
+
+# ==============================================================================
+# 缓存统计函数
+# ==============================================================================
+
+# 计算缓存命中率
+calculate_cache_hit_rate() {
+    local total=$((CACHE_HITS + CACHE_MISSES))
+    [[ ${total} -eq 0 ]] && echo "0" || echo $((CACHE_HITS * 100 / total))
+}
+
+# 获取缓存统计信息
+get_cache_stats() {
+    local total=$((CACHE_HITS + CACHE_MISSES))
+    local hit_rate="0"
+    [[ ${total} -gt 0 ]] && hit_rate=$((CACHE_HITS * 100 / total))
+
+    cat <<EOF
+{
+    "hits": ${CACHE_HITS},
+    "misses": ${CACHE_MISSES},
+    "updates": ${CACHE_UPDATES},
+    "total_requests": ${total},
+    "hit_rate_percent": ${hit_rate},
+    "ttl_seconds": ${CACHE_TTL},
+    "last_update_age_seconds": $(($(date +%s) - CACHE_LAST_UPDATE)),
+    "cached_keys": ${#CACHE_DATA[@]},
+    "key_access_counts": {
+$(for key in "${!CACHE_KEY_ACCESS_COUNT[@]}"; do
+    echo "        \"${key}\": ${CACHE_KEY_ACCESS_COUNT[$key]},"
+done | sed '$ s/,$//')
+    }
+}
+EOF
+}
+
+# 重置缓存统计
+reset_cache_stats() {
+    CACHE_HITS=0
+    CACHE_MISSES=0
+    CACHE_UPDATES=0
+    CACHE_KEY_ACCESS_COUNT=()
+    log_debug "缓存统计已重置"
 }
 
 # ==============================================================================

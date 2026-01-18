@@ -31,6 +31,8 @@ source "${LIB_DIR}/swap.sh"           # Swap管理
 source "${LIB_DIR}/kernel.sh"         # 内核参数
 source "${LIB_DIR}/monitor.sh"        # 监控面板
 source "${LIB_DIR}/menu.sh"           # 菜单系统
+source "${LIB_DIR}/performance_monitor.sh"  # 性能监控
+source "${LIB_DIR}/audit_log.sh"      # 审计日志
 
 # ==============================================================================
 # 全局变量
@@ -182,6 +184,9 @@ init_system() {
     # 初始化日志系统
     init_logging_system
 
+    # 初始化审计日志
+    init_audit_log
+
     # 检查运行环境
     check_runtime_env
 
@@ -193,7 +198,188 @@ init_system() {
     current_strategy=$(get_strategy_mode)
     STRATEGY_MODE="${current_strategy:-${STRATEGY_BALANCE}}"
 
+    # 记录系统启动审计
+    audit_system_start
+
     log_info "系统初始化完成"
+}
+
+# ==============================================================================
+# 一键优化功能 (世界顶级标准)
+# ==============================================================================
+
+# 智能策略选择器
+auto_select_strategy() {
+    local mem_total="${SYSTEM_INFO[total_memory_mb]}"
+    local is_vm="${SYSTEM_INFO[is_virtual]}"
+    local is_container="${SYSTEM_INFO[is_container]}"
+
+    # 容器环境使用保守策略
+    if [[ "${is_container}" == "true" ]]; then
+        echo "conservative"
+        return 0
+    fi
+
+    # 虚拟机使用平衡策略
+    if [[ "${is_vm}" == "true" ]]; then
+        echo "balance"
+        return 0
+    fi
+
+    # 物理机根据内存大小选择
+    if [[ ${mem_total} -lt 1024 ]]; then
+        # 小内存机器使用激进策略
+        echo "aggressive"
+    elif [[ ${mem_total} -lt 4096 ]]; then
+        # 中等内存使用平衡策略
+        echo "balance"
+    else
+        # 大内存机器使用保守策略
+        echo "conservative"
+    fi
+}
+
+# 优化前状态快照
+capture_optimization_snapshot() {
+    local snapshot_file="${BACKUP_DIR}/optimization_snapshot_$(date +%Y%m%d_%H%M%S).json"
+
+    log_info "捕获优化前状态快照..."
+
+    # 采集系统状态
+    local mem_info=$(get_memory_info false)
+    local swap_info=$(get_swap_info false)
+    local zram_info=$(get_zram_usage)
+    local swappiness=$(get_swappiness)
+    local strategy=$(get_strategy_mode)
+
+    # 保存快照
+    cat > "${snapshot_file}" << EOF
+{
+  "timestamp": "$(date -Iseconds)",
+  "memory_info": "${mem_info}",
+  "swap_info": "${swap_info}",
+  "zram_info": "${zram_info}",
+  "swappiness": "${swappiness}",
+  "strategy": "${strategy}"
+}
+EOF
+
+    echo "${snapshot_file}"
+}
+
+# 显示优化进度
+show_optimization_progress() {
+    local step="$1"
+    local total="$2"
+    local message="$3"
+
+    local percent=$((step * 100 / total)) || true
+    local filled=$((percent / 2)) || true
+    local empty=$((50 - filled)) || true
+
+    printf "\r${COLOR_CYAN}[${COLOR_NC}"
+    printf "${COLOR_GREEN}%*s${COLOR_NC}" ${filled} '' | tr ' ' '='
+    printf "${COLOR_WHITE}%*s${COLOR_NC}" ${empty} '' | tr ' ' '-'
+    printf "${COLOR_CYAN}]${COLOR_NC} ${COLOR_WHITE}%3d%%${COLOR_NC} ${COLOR_YELLOW}%s${COLOR_NC}" "${percent}" "${message}"
+}
+
+# 一键优化主函数
+one_click_optimize() {
+    log_info "开始一键优化..."
+    ui_clear
+
+    # 步骤1: 系统检测
+    show_optimization_progress 1 6 "检测系统环境..."
+    sleep 0.3
+
+    local optimal_strategy
+    optimal_strategy=$(auto_select_strategy)
+    log_info "推荐策略: ${optimal_strategy}"
+
+    # 步骤2: 捕获快照
+    show_optimization_progress 2 6 "捕获优化前快照..."
+    sleep 0.3
+
+    local snapshot_file
+    snapshot_file=$(capture_optimization_snapshot)
+
+    # 步骤3: 配置策略
+    show_optimization_progress 3 6 "应用优化策略 (${optimal_strategy})..."
+    sleep 0.3
+
+    set_strategy_mode "${optimal_strategy}"
+
+    # 读取策略参数
+    local strategy_params
+    strategy_params=$(calculate_strategy "${optimal_strategy}")
+    read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< "${strategy_params}"
+
+    # 步骤4: 配置ZRAM
+    show_optimization_progress 4 6 "配置ZRAM压缩内存..."
+    sleep 0.3
+
+    set_config "zram_enabled" "true"
+    set_config "zram_ratio" "${zram_ratio}"
+    set_config "compression_algorithm" "lz4"
+
+    if configure_zram; then
+        log_info "ZRAM配置成功"
+    else
+        log_warn "ZRAM配置失败，继续其他优化..."
+    fi
+
+    # 步骤5: 配置Swap
+    show_optimization_progress 5 6 "配置物理Swap..."
+    sleep 0.3
+
+    set_config "swap_enabled" "true"
+    set_config "swap_size" "${swap_size}"
+
+    if create_swap_file "${swap_size}"; then
+        log_info "Swap配置成功"
+    else
+        log_warn "Swap配置失败，继续其他优化..."
+    fi
+
+    # 步骤6: 配置内核参数
+    show_optimization_progress 6 6 "优化内核参数..."
+    sleep 0.3
+
+    set_config "swappiness" "${swappiness}"
+    set_config "dirty_ratio" "${dirty_ratio}"
+    set_config "min_free_kbytes" "${min_free}"
+
+    if configure_virtual_memory; then
+        log_info "内核参数优化成功"
+    else
+        log_warn "内核参数优化失败..."
+    fi
+
+    # 保存配置
+    save_config
+    save_strategy_config
+
+    # 显示优化结果
+    echo ""
+    echo ""
+    ui_draw_header "优化完成"
+    ui_draw_line
+
+    echo -e "${COLOR_GREEN}✓${COLOR_NC} 策略模式: ${COLOR_CYAN}${optimal_strategy}${COLOR_NC}"
+    echo -e "${COLOR_GREEN}✓${COLOR_NC} ZRAM配置: ${COLOR_CYAN}${zram_ratio}%${COLOR_NC}"
+    echo -e "${COLOR_GREEN}✓${COLOR_NC} Swap大小: ${COLOR_CYAN}${swap_size}MB${COLOR_NC}"
+    echo -e "${COLOR_GREEN}✓${COLOR_NC} Swappiness: ${COLOR_CYAN}${swappiness}${COLOR_NC}"
+    echo -e "${COLOR_GREEN}✓${COLOR_NC} Dirty Ratio: ${COLOR_CYAN}${dirty_ratio}%${COLOR_NC}"
+    echo ""
+    echo -e "${COLOR_YELLOW}快照已保存: ${COLOR_NC}${snapshot_file}"
+
+    ui_draw_bottom
+    echo ""
+    echo -e "${COLOR_YELLOW}[提示] 运行 $0 -m 查看实时监控${COLOR_NC}"
+    echo -e "${COLOR_YELLOW}[提示] 运行 $0 -s 查看系统状态${COLOR_NC}"
+    echo ""
+
+    ui_pause
 }
 
 # ==============================================================================
@@ -203,32 +389,36 @@ init_system() {
 # 显示帮助信息
 show_help() {
     cat << EOF
-Z-Panel Pro v${VERSION} - 轻量级 Linux 内存优化工具 (V9.0 轻量版)
+${COLOR_CYAN}Z-Panel Pro v${VERSION} - 轻量级 Linux 内存优化工具 (V9.0 轻量版)${COLOR_NC}
 
-用法: $0 [选项]
+${COLOR_WHITE}用法:${COLOR_NC} $0 [选项]
 
-基本选项:
+${COLOR_YELLOW}基本选项:${COLOR_NC}
   -h, --help              显示帮助信息
   -v, --version           显示版本信息
   -m, --monitor           显示实时监控面板
   -s, --status            显示系统状态
   -c, --configure         配置向导
 
-管理选项:
+${COLOR_YELLOW}优化选项:${COLOR_NC}
+  -o, --optimize          ${COLOR_GREEN}一键智能优化 (推荐)${COLOR_NC}
+  --strategy <mode>       设置策略模式 (conservative|balance|aggressive)
+
+${COLOR_YELLOW}管理选项:${COLOR_NC}
   -e, --enable            启用开机自启
   -d, --disable           禁用开机自启
 
-高级选项:
-  --strategy <mode>       设置策略模式 (conservative|balance|aggressive)
+${COLOR_YELLOW}高级选项:${COLOR_NC}
   --log-level <level>     设置日志级别 (DEBUG|INFO|WARN|ERROR)
 
-示例:
+${COLOR_WHITE}示例:${COLOR_NC}
+  $0 -o                   ${COLOR_GREEN}一键智能优化 (推荐)${COLOR_NC}
   $0 -m                   显示实时监控面板
   $0 -s                   显示系统状态
   $0 -c                   运行配置向导
   $0 --strategy balance   设置平衡模式
 
-官网: https://github.com/Z-Panel-Pro/Z-Panel-Pro
+${COLOR_CYAN}官网:${COLOR_NC} https://github.com/Z-Panel-Pro/Z-Panel-Pro
 EOF
 }
 
@@ -271,6 +461,10 @@ main() {
                 ;;
             -c|--configure)
                 action="configure"
+                shift
+                ;;
+            -o|--optimize)
+                action="optimize"
                 shift
                 ;;
             -e|--enable)
@@ -321,6 +515,9 @@ main() {
 
     # 执行操作
     case "${action}" in
+        optimize)
+            one_click_optimize
+            ;;
         monitor)
             show_monitor
             ;;
