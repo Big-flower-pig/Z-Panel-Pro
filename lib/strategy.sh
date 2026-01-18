@@ -154,12 +154,20 @@ calculate_strategy() {
         if [[ ${phys_limit} -lt $((zram_size / 2)) ]]; then
             phys_limit=$((zram_size / 2))
         fi
-        # 确保最小值
+        # 确保最小值（只调整 phys_limit，不修改 swap_size）
         [[ ${phys_limit} -lt 64 ]] && phys_limit=64
         [[ ${swap_size} -lt 64 ]] && swap_size=64
     fi
 
-    # 边界检查
+    # 边界检查（确保所有参数都是有效数值）
+    [[ -z "${zram_ratio}" ]] || [[ ! "${zram_ratio}" =~ ^[0-9]+$ ]] && zram_ratio=120
+    [[ -z "${phys_limit}" ]] || [[ ! "${phys_limit}" =~ ^[0-9]+$ ]] && phys_limit=256
+    [[ -z "${swap_size}" ]] || [[ ! "${swap_size}" =~ ^[0-9]+$ ]] && swap_size=512
+    [[ -z "${swappiness}" ]] || [[ ! "${swappiness}" =~ ^[0-9]+$ ]] && swappiness=85
+    [[ -z "${dirty_ratio}" ]] || [[ ! "${dirty_ratio}" =~ ^[0-9]+$ ]] && dirty_ratio=10
+    [[ -z "${min_free}" ]] || [[ ! "${min_free}" =~ ^[0-9]+$ ]] && min_free=32768
+
+    # 范围检查
     [[ ${zram_ratio} -lt 50 ]] && zram_ratio=50
     [[ ${zram_ratio} -gt 200 ]] && zram_ratio=200
     [[ ${phys_limit} -lt 64 ]] && phys_limit=64
