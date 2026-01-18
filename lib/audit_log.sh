@@ -11,8 +11,8 @@
 # ==============================================================================
 # 审计日志配置
 # ==============================================================================
-declare -g AUDIT_LOG_DIR="${LOG_DIR}/audit"
-declare -g AUDIT_LOG_FILE="${AUDIT_LOG_DIR}/audit.log"
+declare -g AUDIT_LOG_DIR=""
+declare -g AUDIT_LOG_FILE=""
 declare -g AUDIT_LOG_MAX_SIZE_MB=100
 declare -g AUDIT_LOG_RETENTION_DAYS=90
 declare -g AUDIT_ENABLED=true
@@ -41,6 +41,12 @@ readonly AUDIT_EVENT_ERROR="error"
 # 初始化审计日志
 init_audit_log() {
     [[ "${AUDIT_ENABLED}" != "true" ]] && return 0
+
+    # 初始化审计日志路径
+    if [[ -z "${AUDIT_LOG_DIR}" ]]; then
+        AUDIT_LOG_DIR="${LOG_DIR}/audit"
+        AUDIT_LOG_FILE="${AUDIT_LOG_DIR}/audit.log"
+    fi
 
     # 创建审计日志目录
     mkdir -p "${AUDIT_LOG_DIR}" 2>/dev/null || {

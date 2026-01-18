@@ -42,6 +42,11 @@ readonly LOG_CONFIG_FILE="${CONF_DIR}/log.conf"
 readonly SWAP_CONFIG_FILE="${CONF_DIR}/swap.conf"
 
 # ==============================================================================
+# 日志文件路径
+# ==============================================================================
+readonly LOG_FILE="${LOG_DIR}/zpanel.log"
+
+# ==============================================================================
 # 锁文件
 # ==============================================================================
 readonly LOCK_FILE="/tmp/z-panel.lock"
@@ -271,7 +276,7 @@ validate_config() {
     fi
 
     # 验证布尔值
-    local bool_keys=("zram_enabled" "swap_enabled")
+    local bool_keys=("log_file_rotation")
     for key in "${bool_keys[@]}"; do
         local value="${CONFIG_CENTER[$key]:-false}"
         if [[ "${value}" != "true" ]] && [[ "${value}" != "false" ]]; then
