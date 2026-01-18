@@ -87,10 +87,22 @@ calculate_strategy() {
     fi
 
     # 验证系统信息
-    local mem_total="${SYSTEM_INFO[total_memory_mb]}"
-    if [[ ! "${mem_total}" =~ ^[0-9]+$ ]]; then
-        log_error "无效的内存信息: ${mem_total}"
-        return 1
+    local mem_total="${SYSTEM_INFO[total_memory_mb]:-0}"
+
+    # 如果内存信息为空或无效，尝试重新获取
+    if [[ ! "${mem_total}" =~ ^[0-9]+$ ]] || [[ "${mem_total}" -eq 0 ]]; then
+        log_warn "内存信息无效 (${mem_total})，尝试重新获取..."
+        # 调用系统检测
+        if command -v detect_system &>/dev/null; then
+            detect_system 2>/dev/null || true
+            mem_total="${SYSTEM_INFO[total_memory_mb]:-0}"
+        fi
+
+        # 如果仍然无效，使用默认值
+        if [[ ! "${mem_total}" =~ ^[0-9]+$ ]] || [[ "${mem_total}" -eq 0 ]]; then
+            log_warn "无法获取内存信息，使用默认值 1024MB"
+            mem_total=1024
+        fi
     fi
 
     # 验证内存范围 (64MB-1TB)

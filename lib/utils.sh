@@ -300,25 +300,27 @@ safe_source() {
 
     # 检查危险模式（防止代码注入）
     # 只检查命令执行相关的危险模式
-    local dangerous_patterns=(
-        '\$\('        # 命令替换
-        '`'           # 反引号命令替换
-        '\|.*\|'      # 管道命令（在配置文件中很少需要）
-        '&&'          # 命令链接
-        '\|\|'        # 逻辑或
-        ';'           # 命令分隔符
-        '>'           # 输出重定向（排除 > 用于比较的情况）
-        '<'           # 输入重定向
-    )
-
-    for pattern in "${dangerous_patterns[@]}"; do
-        # 排除注释行和字符串中的模式
-        if grep -v '^[[:space:]]*#' "${file}" 2>/dev/null | grep -qE "${pattern}"; then
-            log_warn "检测到潜在危险模式: ${pattern} 在 ${file}"
-            log_warn "请检查配置文件内容"
-            # 不直接拒绝，而是警告
-        fi
-    done
+    # 使用固定字符串匹配，避免正则表达式错误
+    if grep -v '^[[:space:]]*#' "${file}" 2>/dev/null | grep -qF '\$('; then
+        log_warn "检测到潜在危险模式: \$( 在 ${file}"
+        log_warn "请检查配置文件内容"
+    fi
+    if grep -v '^[[:space:]]*#' "${file}" 2>/dev/null | grep -qF '`'; then
+        log_warn "检测到潜在危险模式: \` 在 ${file}"
+        log_warn "请检查配置文件内容"
+    fi
+    if grep -v '^[[:space:]]*#' "${file}" 2>/dev/null | grep -q '&&'; then
+        log_warn "检测到潜在危险模式: && 在 ${file}"
+        log_warn "请检查配置文件内容"
+    fi
+    if grep -v '^[[:space:]]*#' "${file}" 2>/dev/null | grep -q '||'; then
+        log_warn "检测到潜在危险模式: || 在 ${file}"
+        log_warn "请检查配置文件内容"
+    fi
+    if grep -v '^[[:space:]]*#' "${file}" 2>/dev/null | grep -q ';'; then
+        log_warn "检测到潜在危险模式: ; 在 ${file}"
+        log_warn "请检查配置文件内容"
+    fi
 
     # 加载文件
     source "${file}"

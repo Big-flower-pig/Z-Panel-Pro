@@ -461,7 +461,27 @@ one_click_optimize() {
     # 读取策略参数
     local strategy_params
     strategy_params=$(calculate_strategy "${optimal_strategy}")
-    read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< "${strategy_params}"
+
+    # 验证返回值不为空
+    if [[ -z "${strategy_params}" ]]; then
+        log_error "策略参数计算失败，使用默认值"
+        zram_ratio=120
+        phys_limit=256
+        swap_size=512
+        swappiness=85
+        dirty_ratio=10
+        min_free=32768
+    else
+        read -r zram_ratio phys_limit swap_size swappiness dirty_ratio min_free <<< "${strategy_params}"
+    fi
+
+    # 验证参数不为空
+    [[ -z "${zram_ratio}" ]] && zram_ratio=120
+    [[ -z "${phys_limit}" ]] && phys_limit=256
+    [[ -z "${swap_size}" ]] && swap_size=512
+    [[ -z "${swappiness}" ]] && swappiness=85
+    [[ -z "${dirty_ratio}" ]] && dirty_ratio=10
+    [[ -z "${min_free}" ]] && min_free=32768
 
     # 步骤4: 配置ZRAM
     show_optimization_progress 4 6 "配置ZRAM压缩内存..."
@@ -505,7 +525,7 @@ one_click_optimize() {
     fi
 
     # 保存配置
-    save_config
+    save_config "${CONF_DIR}/zpanel.conf" "zpanel"
     save_strategy_config
 
     # 显示优化结果
