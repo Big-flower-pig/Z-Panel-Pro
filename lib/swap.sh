@@ -71,14 +71,17 @@ create_swap_file() {
         return 1
     fi
 
-    # 边界检查：最小128MB
-    if [[ ${size_mb} -lt 128 ]]; then
-        handle_error "SWAP_CREATE" "Swap 大小不能小于 128MB (当前: ${size_mb}MB)"
+    # 边界检查：最小64MB（支持100MB-32G范围）
+    if [[ ${size_mb} -lt 64 ]]; then
+        handle_error "SWAP_CREATE" "Swap 大小不能小于 64MB (当前: ${size_mb}MB)"
         return 1
     fi
 
-    # 边界检查：最大4倍物理内存
+    # 边界检查：最大4倍物理内存（但至少512MB）
     local max_size=$((SYSTEM_INFO[total_memory_mb] * 4))
+    if [[ ${max_size} -lt 512 ]]; then
+        max_size=512
+    fi
     if [[ ${size_mb} -gt ${max_size} ]]; then
         handle_error "SWAP_CREATE" "Swap 大小超过最大限制 (最大: ${max_size}MB, 当前: ${size_mb}MB)"
         return 1
@@ -222,14 +225,17 @@ configure_physical_swap() {
         return 1
     fi
 
-    # 边界检查：最小128MB
-    if [[ ${swap_size} -lt 128 ]]; then
-        swap_size=128
-        log_warn "Swap 大小调整至最小值: 128MB"
+    # 边界检查：最小64MB（支持100MB-32G范围）
+    if [[ ${swap_size} -lt 64 ]]; then
+        swap_size=64
+        log_warn "Swap 大小调整至最小值: 64MB"
     fi
 
-    # 边界检查：最大4倍物理内存
+    # 边界检查：最大4倍物理内存（但至少512MB）
     local max_size=$((SYSTEM_INFO[total_memory_mb] * 4))
+    if [[ ${max_size} -lt 512 ]]; then
+        max_size=512
+    fi
     if [[ ${swap_size} -gt ${max_size} ]]; then
         log_warn "Swap 大小超过最大限制，调整至: ${max_size}MB"
         swap_size=${max_size}
@@ -348,8 +354,8 @@ recommend_swap_size() {
 
     local mem_total=${SYSTEM_INFO[total_memory_mb]}
 
-    # 边界检查：物理内存必须有效
-    if [[ ${mem_total} -lt 64 ]]; then
+    # 边界检查：物理内存必须有效（最小32MB）
+    if [[ ${mem_total} -lt 32 ]]; then
         handle_error "SWAP_RECOMMEND" "物理内存过小 (${mem_total}MB)，无法推荐 Swap 大小"
         echo "0"
         return 1
@@ -438,8 +444,8 @@ recommend_swap_size() {
         fi
     fi
 
-    # 边界检查
-    [[ ${recommended_size} -lt 128 ]] && recommended_size=128
+    # 边界检查（支持100MB-32G范围）
+    [[ ${recommended_size} -lt 64 ]] && recommended_size=64
     [[ ${recommended_size} -gt $((mem_total * 4)) ]] && recommended_size=$((mem_total * 4))
 
     log_info "Swap大小推荐: ${recommended_size}MB (${reason})"

@@ -269,17 +269,20 @@ configure_zram_limits() {
         return 1
     fi
 
-    # 边界检查：最小64MB
-    if [[ ${zram_size} -lt 64 ]]; then
-        handle_error "ZRAM_LIMIT" "ZRAM 大小不能小于 64MB (当前: ${zram_size}MB)"
+    # 边界检查：最小32MB（支持100MB-32G范围）
+    if [[ ${zram_size} -lt 32 ]]; then
+        handle_error "ZRAM_LIMIT" "ZRAM 大小不能小于 32MB (当前: ${zram_size}MB)"
         return 1
     fi
 
-    # 边界检查：最大2倍物理内存
+    # 边界检查：最大2倍物理内存（但至少512MB）
     local max_zram=$((SYSTEM_INFO[total_memory_mb] * 2))
+    if [[ ${max_zram} -lt 512 ]]; then
+        max_zram=512
+    fi
     if [[ ${zram_size} -gt ${max_zram} ]]; then
-        handle_error "ZRAM_LIMIT" "ZRAM 大小超过最大限制 (最大: ${max_zram}MB, 当前: ${zram_size}MB)"
-        return 1
+        log_warn "ZRAM 大小超过最大限制，自动调整: ${zram_size}MB -> ${max_zram}MB"
+        zram_size=${max_zram}
     fi
 
     # 参数验证：物理内存限制
@@ -288,16 +291,24 @@ configure_zram_limits() {
         return 1
     fi
 
-    # 边界检查：物理限制不能超过总内存
-    if [[ ${phys_limit} -gt ${SYSTEM_INFO[total_memory_mb]} ]]; then
-        handle_error "ZRAM_LIMIT" "物理内存限制不能超过总内存 (总内存: ${SYSTEM_INFO[total_memory_mb]}MB, 限制: ${phys_limit}MB)"
-        return 1
+    # 边界检查：物理限制不能超过总内存（小内存系统允许适当放宽）
+    local max_phys_limit=${SYSTEM_INFO[total_memory_mb]}
+    if [[ ${max_phys_limit} -lt 64 ]]; then
+        max_phys_limit=64
+    fi
+    if [[ ${phys_limit} -gt ${max_phys_limit} ]]; then
+        log_warn "物理内存限制超过总内存，自动调整: ${phys_limit}MB -> ${max_phys_limit}MB"
+        phys_limit=${max_phys_limit}
     fi
 
-    # 边界检查：物理限制不能小于ZRAM大小
-    if [[ ${phys_limit} -lt ${zram_size} ]]; then
-        handle_error "ZRAM_LIMIT" "物理内存限制不能小于 ZRAM 大小 (ZRAM: ${zram_size}MB, 限制: ${phys_limit}MB)"
-        return 1
+    # 边界检查：物理限制不能小于ZRAM大小的一半（小内存系统特殊处理）
+    local min_phys_limit=$((zram_size / 2))
+    if [[ ${min_phys_limit} -lt 32 ]]; then
+        min_phys_limit=32
+    fi
+    if [[ ${phys_limit} -lt ${min_phys_limit} ]]; then
+        log_warn "物理内存限制过小，自动调整: ${phys_limit}MB -> ${min_phys_limit}MB"
+        phys_limit=${min_phys_limit}
     fi
 
     # 设置磁盘大小
@@ -406,14 +417,17 @@ prepare_zram_params() {
 
     local zram_size=$((SYSTEM_INFO[total_memory_mb] * zram_ratio / 100)) || true
 
-    # 边界检查：最小512MB
-    if [[ ${zram_size} -lt 512 ]]; then
-        zram_size=512
-        log_warn "ZRAM 大小调整至最小值: 512MB"
+    # 边界检查：最小64MB（支持100MB-32G范围）
+    if [[ ${zram_size} -lt 64 ]]; then
+        zram_size=64
+        log_warn "ZRAM 大小调整至最小值: 64MB"
     fi
 
-    # 边界检查：最大2倍物理内存
+    # 边界检查：最大2倍物理内存（但至少512MB）
     local max_zram=$((SYSTEM_INFO[total_memory_mb] * 2))
+    if [[ ${max_zram} -lt 512 ]]; then
+        max_zram=512
+    fi
     if [[ ${zram_size} -gt ${max_zram} ]]; then
         log_warn "ZRAM 大小超过最大限制，调整至: ${max_zram}MB"
         zram_size=${max_zram}

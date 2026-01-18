@@ -146,11 +146,24 @@ calculate_strategy() {
             ;;
     esac
 
+    # 小内存系统特殊处理（100MB-512MB）
+    if [[ ${mem_total} -lt 512 ]]; then
+        log_warn "小内存系统 (${mem_total}MB)，调整策略参数"
+        # 确保 phys_limit >= zram_size 的 50%，避免验证失败
+        local zram_size=$((mem_total * zram_ratio / 100)) || true
+        if [[ ${phys_limit} -lt $((zram_size / 2)) ]]; then
+            phys_limit=$((zram_size / 2))
+        fi
+        # 确保最小值
+        [[ ${phys_limit} -lt 64 ]] && phys_limit=64
+        [[ ${swap_size} -lt 64 ]] && swap_size=64
+    fi
+
     # 边界检查
     [[ ${zram_ratio} -lt 50 ]] && zram_ratio=50
     [[ ${zram_ratio} -gt 200 ]] && zram_ratio=200
-    [[ ${phys_limit} -lt 128 ]] && phys_limit=128
-    [[ ${swap_size} -lt 128 ]] && swap_size=128
+    [[ ${phys_limit} -lt 64 ]] && phys_limit=64
+    [[ ${swap_size} -lt 64 ]] && swap_size=64
 
     echo "${zram_ratio} ${phys_limit} ${swap_size} ${swappiness} ${dirty_ratio} ${min_free}"
 }
