@@ -152,7 +152,7 @@ init_logging_system() {
 # 初始化配置目录
 init_config_dirs() {
     local dirs=(
-        "${CONFIG_DIR}"
+        "${CONF_DIR}"
         "${LOCK_DIR}"
         "${BACKUP_DIR}"
         "${LOG_DIR}"

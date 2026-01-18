@@ -20,6 +20,7 @@ readonly CODENAME="Simple"
 # ==============================================================================
 readonly INSTALL_DIR="/opt/Z-Panel-Pro"
 readonly CONF_DIR="${INSTALL_DIR}/conf"
+readonly LOCK_DIR="${INSTALL_DIR}/run"
 readonly LOG_DIR="${INSTALL_DIR}/logs"
 readonly BACKUP_DIR="${INSTALL_DIR}/backup"
 readonly CACHE_DIR="${INSTALL_DIR}/cache"
